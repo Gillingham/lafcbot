@@ -6,7 +6,15 @@ and web scraping for match results, statistics, and details.
 """
 
 from .client import FotMobClient
-from .models import Match, MatchDetails, League, Team, MatchEvent, Venue, BroadcastChannel
+from .models import (
+    BroadcastChannel,
+    League,
+    Match,
+    MatchDetails,
+    MatchEvent,
+    Team,
+    Venue,
+)
 
 
 def resolve_league_name(league_input: str) -> tuple[str | None, int | None]:
@@ -19,7 +27,7 @@ def resolve_league_name(league_input: str) -> tuple[str | None, int | None]:
     Returns:
         Tuple of (canonical_name, league_id) or (None, None) if not found
     """
-    from .constants import LEAGUE_IDS, LEAGUE_ALIASES
+    from .constants import LEAGUE_ALIASES, LEAGUE_IDS
 
     # Normalize input
     normalized = league_input.lower().strip().replace("_", " ")

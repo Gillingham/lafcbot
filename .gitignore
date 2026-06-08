@@ -3,4 +3,5 @@ __pycache__/
 .python-version
 .env
 *.pyc
+golazo
 lafcbot.egg-info/

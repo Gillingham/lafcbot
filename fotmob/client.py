@@ -2,14 +2,14 @@
 
 import asyncio
 import logging
-from typing import Optional, List
-from datetime import datetime, date
+from datetime import date, datetime
+from typing import Optional
 
 import aiohttp
 
-from .constants import BASE_URL, HEADERS, REQUEST_DELAY, MAX_RETRIES, RETRY_DELAY
-from .parser import extract_page_props, extract_broadcast_channels
-from .models import Match, MatchDetails, League, Team, MatchEvent, Venue, BroadcastChannel
+from .constants import BASE_URL, HEADERS, MAX_RETRIES, REQUEST_DELAY, RETRY_DELAY
+from .models import BroadcastChannel, Match, MatchDetails, MatchEvent, Team, Venue
+from .parser import extract_broadcast_channels, extract_page_props
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +82,14 @@ class FotMobClient:
                     if response.status == 200:
                         return await response.read()
                     elif response.status == 403:
-                        logger.warning(f"Got 403 for {url}, may need to use scraping fallback")
+                        logger.warning(
+                            f"Got 403 for {url}, may need to use scraping fallback"
+                        )
                         return None
                     else:
-                        logger.warning(f"Request to {url} returned status {response.status}")
+                        logger.warning(
+                            f"Request to {url} returned status {response.status}"
+                        )
                         if attempt < MAX_RETRIES - 1:
                             await asyncio.sleep(RETRY_DELAY * (attempt + 1))
             except Exception as e:
@@ -111,7 +115,8 @@ class FotMobClient:
         if response_body:
             try:
                 import json
-                return json.loads(response_body.decode('utf-8'))
+
+                return json.loads(response_body.decode("utf-8"))
             except Exception as e:
                 logger.error(f"Failed to parse JSON from {url}: {e}")
 
@@ -132,15 +137,15 @@ class FotMobClient:
 
         if response_body:
             try:
-                return response_body.decode('utf-8')
+                return response_body.decode("utf-8")
             except Exception as e:
                 logger.error(f"Failed to decode HTML from {url}: {e}")
 
         return None
 
     async def get_matches_by_date(
-        self, target_date: Optional[str] = None, league_ids: Optional[List[int]] = None
-    ) -> List[Match]:
+        self, target_date: Optional[str] = None, league_ids: Optional[list[int]] = None
+    ) -> list[Match]:
         """
         Get matches for a specific date and leagues.
 
@@ -162,7 +167,9 @@ class FotMobClient:
 
         data = await self._fetch_api_endpoint(endpoint)
         if data is None:
-            logger.warning(f"API endpoint failed for matches by date, attempting page scraping")
+            logger.warning(
+                "API endpoint failed for matches by date, attempting page scraping"
+            )
             return []
 
         return self._parse_matches_from_api(data)
@@ -187,7 +194,9 @@ class FotMobClient:
             if data:
                 return self._parse_match_details_from_api(data)
             else:
-                logger.warning(f"API endpoint failed for match {match_id}, trying page scraping")
+                logger.warning(
+                    f"API endpoint failed for match {match_id}, trying page scraping"
+                )
 
         if page_slug is not None:
             html = await self._fetch_page_html(page_slug)
@@ -196,11 +205,13 @@ class FotMobClient:
                 if page_props:
                     # Also extract broadcast channels from HTML
                     broadcast_channels_data = extract_broadcast_channels(html)
-                    return self._parse_match_details_from_page(page_props, broadcast_channels_data)
+                    return self._parse_match_details_from_page(
+                        page_props, broadcast_channels_data
+                    )
 
         return None
 
-    async def get_league_matches(self, league_id: int) -> List[Match]:
+    async def get_league_matches(self, league_id: int) -> list[Match]:
         """
         Get all matches for a specific league.
 
@@ -242,7 +253,7 @@ class FotMobClient:
 
         return None
 
-    def _parse_matches_from_api(self, data: dict) -> List[Match]:
+    def _parse_matches_from_api(self, data: dict) -> list[Match]:
         """Parse matches from API response."""
         matches = []
 
@@ -253,7 +264,9 @@ class FotMobClient:
 
             for match_data in league_data.get("matches", []):
                 try:
-                    match = self._parse_match_from_dict(match_data, league_id, league_name)
+                    match = self._parse_match_from_dict(
+                        match_data, league_id, league_name
+                    )
                     matches.append(match)
                 except Exception as e:
                     logger.error(f"Failed to parse match: {e}")
@@ -261,7 +274,10 @@ class FotMobClient:
         return matches
 
     def _parse_match_from_dict(
-        self, data: dict, league_id: Optional[int] = None, league_name: Optional[str] = None
+        self,
+        data: dict,
+        league_id: Optional[int] = None,
+        league_name: Optional[str] = None,
     ) -> Match:
         """Parse a single match from a dictionary."""
         home_team = Team(
@@ -277,14 +293,22 @@ class FotMobClient:
         )
 
         status_obj = data.get("status", {})
-        status = status_obj.get("finished") and "finished" or status_obj.get("started") and "live" or "upcoming"
+        status = (
+            status_obj.get("finished")
+            and "finished"
+            or status_obj.get("started")
+            and "live"
+            or "upcoming"
+        )
 
         # Try multiple fields for start time
         start_time_str = status_obj.get("utcTime") or status_obj.get("startTimeUtc")
         start_time = None
         if start_time_str:
             try:
-                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                start_time = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00")
+                )
             except Exception:
                 pass
 
@@ -329,14 +353,22 @@ class FotMobClient:
             name=general.get("awayTeam", {}).get("name", "Unknown"),
         )
 
-        status = "finished" if general.get("finished") else "live" if general.get("started") else "upcoming"
+        status = (
+            "finished"
+            if general.get("finished")
+            else "live"
+            if general.get("started")
+            else "upcoming"
+        )
 
         # Parse start time from matchTimeUTCDate
         start_time = None
         start_time_str = general.get("matchTimeUTCDate")
         if start_time_str:
             try:
-                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                start_time = datetime.fromisoformat(
+                    start_time_str.replace("Z", "+00:00")
+                )
             except Exception:
                 pass
 
@@ -367,7 +399,12 @@ class FotMobClient:
         )
 
         events = []
-        for event_data in data.get("content", {}).get("matchFacts", {}).get("events", {}).get("events", []):
+        for event_data in (
+            data.get("content", {})
+            .get("matchFacts", {})
+            .get("events", {})
+            .get("events", [])
+        ):
             events.append(
                 MatchEvent(
                     type=event_data.get("type", "unknown"),
@@ -381,9 +418,17 @@ class FotMobClient:
         stats = data.get("content", {}).get("stats", {})
         lineups = data.get("content", {}).get("lineup", {})
 
-        return MatchDetails(match=match, events=events, stats=stats, lineups=lineups, broadcast_channels=None)
+        return MatchDetails(
+            match=match,
+            events=events,
+            stats=stats,
+            lineups=lineups,
+            broadcast_channels=None,
+        )
 
-    def _parse_match_details_from_page(self, page_props: dict, broadcast_channels_data: list = None) -> Optional[MatchDetails]:
+    def _parse_match_details_from_page(
+        self, page_props: dict, broadcast_channels_data: list = None
+    ) -> Optional[MatchDetails]:
         """Parse match details from scraped page props."""
         details = self._parse_match_details_from_api(page_props)
 
@@ -392,7 +437,7 @@ class FotMobClient:
             channels = [
                 BroadcastChannel(
                     channel_name=ch.get("channelName", ""),
-                    country_name=ch.get("countryName", "")
+                    country_name=ch.get("countryName", ""),
                 )
                 for ch in broadcast_channels_data
             ]
@@ -400,7 +445,7 @@ class FotMobClient:
 
         return details
 
-    def _parse_matches_from_league_page(self, page_props: dict) -> List[Match]:
+    def _parse_matches_from_league_page(self, page_props: dict) -> list[Match]:
         """Parse matches from a league page's props."""
         matches = []
 

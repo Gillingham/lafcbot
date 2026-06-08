@@ -1,63 +1,38 @@
+import json
 import os
-import sys
-import re
 import random
+import re
+import sys
+from pathlib import Path
 
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 
-from fotmob import FotMobClient, resolve_league_name, format_league_name
+from fotmob import FotMobClient, format_league_name, resolve_league_name
 from fotmob.constants import LEAGUE_IDS
+from world_cup import WorldCupTask, get_country_flag
 
 
-def get_country_flag(country_name: str) -> str:
-    """Convert a country name to its flag emoji."""
-    # Map common country names to their ISO 3166-1 alpha-2 codes
-    country_codes = {
-        # UEFA
-        "Germany": "DE", "Spain": "ES", "France": "FR", "Italy": "IT",
-        "England": "GB-ENG", "Portugal": "PT", "Netherlands": "NL", "Belgium": "BE",
-        "Croatia": "HR", "Denmark": "DK", "Switzerland": "CH", "Austria": "AT",
-        "Poland": "PL", "Ukraine": "UA", "Sweden": "SE", "Norway": "NO",
-        "Czech Republic": "CZ", "Serbia": "RS", "Turkey": "TR", "Greece": "GR",
-        "Scotland": "GB-SCT", "Wales": "GB-WLS", "Ireland": "IE", "Northern Ireland": "GB-NIR",
-
-        # CONMEBOL
-        "Brazil": "BR", "Argentina": "AR", "Uruguay": "UY", "Colombia": "CO",
-        "Chile": "CL", "Peru": "PE", "Ecuador": "EC", "Paraguay": "PY",
-        "Venezuela": "VE", "Bolivia": "BO",
-
-        # CONCACAF
-        "USA": "US", "United States": "US", "Mexico": "MX", "Canada": "CA",
-        "Costa Rica": "CR", "Jamaica": "JM", "Panama": "PA", "Honduras": "HN",
-
-        # AFC
-        "Japan": "JP", "South Korea": "KR", "Korea Republic": "KR", "Australia": "AU",
-        "Iran": "IR", "Saudi Arabia": "SA", "Qatar": "QA", "UAE": "AE",
-        "Iraq": "IQ", "China": "CN", "Thailand": "TH",
-
-        # CAF
-        "Nigeria": "NG", "Senegal": "SN", "Morocco": "MA", "Egypt": "EG",
-        "Ghana": "GH", "Cameroon": "CM", "Algeria": "DZ", "Tunisia": "TN",
-        "South Africa": "ZA", "Ivory Coast": "CI", "Côte d'Ivoire": "CI",
-
-        # OFC
-        "New Zealand": "NZ",
-    }
-
-    code = country_codes.get(country_name, "")
-    if not code:
-        return ""
-
-    # Handle special UK countries
-    if code.startswith("GB-"):
-        # For sub-regions, just use GB flag
-        code = "GB"
-
-    # Convert ISO code to flag emoji
-    # Each letter becomes a regional indicator symbol (🇦 = U+1F1E6, etc.)
-    flag = "".join(chr(0x1F1E6 + ord(c) - ord('A')) for c in code.upper())
-    return flag
+def load_config() -> dict:
+    """Load configuration from config.json."""
+    config_path = Path(__file__).parent / "config.json"
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Warning: {config_path} not found, using defaults")
+        return {
+            "world_cup": {
+                "enabled": False,
+                "channel_name": "world-cup",
+                "live_channel_name": "world-cup-live",
+                "daily_time_hour": 8,
+                "timezone": "America/Los_Angeles",
+            }
+        }
+    except json.JSONDecodeError as e:
+        print(f"Error parsing config.json: {e}")
+        return {"world_cup": {"enabled": False}}
 
 
 intents = discord.Intents.default()
@@ -65,193 +40,12 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 fotmob_client = None
-
-
-@tasks.loop(hours=24)
-async def daily_world_cup_matches():
-    """Send World Cup matches to the world-cup-2026 channel daily at 8am PST."""
-    if fotmob_client is None:
-        return
-
-    # Find the world-cup-2026 channel across all guilds
-    channel = None
-    for guild in bot.guilds:
-        channel = discord.utils.get(guild.channels, name="world-cup-2026")
-        if channel:
-            break
-
-    if not channel:
-        print("Warning: world-cup-2026 channel not found")
-        return
-
-    # Get World Cup matches (league ID 77)
-    league_id = 77
-
-    try:
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        league_matches = await fotmob_client.get_league_matches(league_id)
-
-        if not league_matches:
-            return
-
-        # Get today's date in Los Angeles timezone
-        la_tz = ZoneInfo("America/Los_Angeles")
-        today_la = datetime.now(la_tz).date()
-
-        # Filter matches to only those from today (in LA time)
-        todays_matches = []
-        upcoming_by_date = {}
-
-        for m in league_matches:
-            if m.is_live:
-                todays_matches.append(m)
-            elif m.is_finished and m.start_time:
-                match_time_la = m.start_time.astimezone(la_tz)
-                if match_time_la.date() == today_la:
-                    todays_matches.append(m)
-            elif not m.is_finished and m.start_time:
-                match_time_la = m.start_time.astimezone(la_tz)
-                match_date = match_time_la.date()
-                if match_date == today_la:
-                    todays_matches.append(m)
-                else:
-                    if match_date not in upcoming_by_date:
-                        upcoming_by_date[match_date] = []
-                    upcoming_by_date[match_date].append(m)
-
-        # Determine which matches to show
-        if todays_matches:
-            matches_to_display = todays_matches
-            display_date = today_la
-        elif upcoming_by_date:
-            next_date = min(upcoming_by_date.keys())
-            matches_to_display = upcoming_by_date[next_date]
-            display_date = next_date
-        else:
-            await channel.send("No World Cup matches scheduled.")
-            return
-
-        # Determine header
-        if display_date == today_la:
-            date_header = "Today's Matches"
-        else:
-            date_str = display_date.strftime("%A, %b %d")
-            date_header = f"Next Matches - {date_str}"
-
-        lines = ["**World Cup Matches**\n", f"**{date_header}:**"]
-
-        # Only show upcoming matches (no spoilers for finished matches)
-        upcoming = [m for m in matches_to_display if not (m.is_live or m.is_finished)]
-
-        # Display upcoming matches with detailed info (limit to 5 for venue/broadcast lookup)
-        for match in upcoming[:5]:
-            venue_info = None
-            us_broadcast_channels = []
-            if match.page_slug:
-                try:
-                    details = await fotmob_client.get_match_details(page_slug=match.page_slug)
-                    if details:
-                        if details.match.venue:
-                            venue_info = details.match.venue
-                        if details.broadcast_channels:
-                            us_broadcast_channels = [
-                                ch.channel_name for ch in details.broadcast_channels
-                                if ch.country_name and "USA" in ch.country_name.upper()
-                            ]
-                except Exception:
-                    pass
-
-            home_name = match.home_team.name
-            away_name = match.away_team.name
-            home_flag = get_country_flag(home_name)
-            away_flag = get_country_flag(away_name)
-            if home_flag:
-                home_name = f"{home_flag} {home_name}"
-            if away_flag:
-                away_name = f"{away_flag} {away_name}"
-
-            if match.start_time:
-                match_time_la = match.start_time.astimezone(la_tz)
-                time_str = match_time_la.strftime("%b %d, %I:%M %p PT")
-                lines.append(f"{home_name} vs {away_name} - {time_str}")
-            else:
-                lines.append(f"{home_name} vs {away_name}")
-
-            if venue_info:
-                venue_parts = [f"  🏟️ {venue_info.name}"]
-                if venue_info.city:
-                    venue_parts.append(venue_info.city)
-                lines.append(", ".join(venue_parts))
-
-            if us_broadcast_channels:
-                lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
-
-        # Show remaining upcoming matches without venue info (6-10)
-        if len(upcoming) > 5:
-            for match in upcoming[5:10]:
-                home_name = match.home_team.name
-                away_name = match.away_team.name
-                home_flag = get_country_flag(home_name)
-                away_flag = get_country_flag(away_name)
-                if home_flag:
-                    home_name = f"{home_flag} {home_name}"
-                if away_flag:
-                    away_name = f"{away_flag} {away_name}"
-
-                if match.start_time:
-                    match_time_la = match.start_time.astimezone(la_tz)
-                    time_str = match_time_la.strftime("%b %d, %I:%M %p PT")
-                    lines.append(f"{home_name} vs {away_name} - {time_str}")
-                else:
-                    lines.append(f"{home_name} vs {away_name}")
-
-        response = "\n".join(lines)
-        if len(response) > 2000:
-            response = response[:1997] + "..."
-
-        await channel.send(response)
-        print(f"Sent daily World Cup matches to {channel.name}")
-
-    except Exception as e:
-        import traceback
-        print(f"Error in daily World Cup task: {e}")
-        print(traceback.format_exc())
-
-
-@daily_world_cup_matches.before_loop
-async def before_daily_task():
-    """Wait until the bot is ready and set the time to 8am PST."""
-    await bot.wait_until_ready()
-
-    # Calculate time until next 8am PST
-    from datetime import datetime, time
-    from zoneinfo import ZoneInfo
-
-    la_tz = ZoneInfo("America/Los_Angeles")
-    now = datetime.now(la_tz)
-
-    # Set target time to 8am today
-    target = datetime.combine(now.date(), time(hour=8, minute=0), tzinfo=la_tz)
-
-    # If we've passed 8am today, schedule for tomorrow
-    if now >= target:
-        from datetime import timedelta
-        target = target + timedelta(days=1)
-
-    # Calculate seconds to wait
-    wait_seconds = (target - now).total_seconds()
-
-    print(f"Daily World Cup task will start at {target.strftime('%Y-%m-%d %I:%M %p %Z')}")
-
-    import asyncio
-    await asyncio.sleep(wait_seconds)
+world_cup_task = None
 
 
 @bot.event
 async def on_ready():
-    global fotmob_client
+    global fotmob_client, world_cup_task
     fotmob_client = FotMobClient()
 
     print(f"Logged in as: {bot.user} (ID: {bot.user.id})")
@@ -261,9 +55,15 @@ async def on_ready():
         print(f"- {g.name} (ID: {g.id}) — {g.member_count} members")
     print("------")
 
-    # Start the daily World Cup task
-    if not daily_world_cup_matches.is_running():
-        daily_world_cup_matches.start()
+    # Load config and start World Cup task if enabled
+    config = load_config()
+    wc_config = config.get("world_cup", {})
+
+    if wc_config.get("enabled", False):
+        world_cup_task = WorldCupTask(bot, fotmob_client, wc_config)
+        world_cup_task.start()
+    else:
+        print("World Cup daily task is disabled in config")
 
 
 @bot.command()
@@ -303,14 +103,18 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
       !matches Champions
     """
     if fotmob_client is None:
-        await ctx.send("FotMob client not initialized. Please wait for bot to fully start.")
+        await ctx.send(
+            "FotMob client not initialized. Please wait for bot to fully start."
+        )
         return
 
     # Resolve league name/alias to canonical name and ID
     league_key, league_id = resolve_league_name(league)
 
     if not league_id or not league_key:
-        available_leagues = ", ".join([format_league_name(k) for k in LEAGUE_IDS.keys()])
+        available_leagues = ", ".join(
+            [format_league_name(k) for k in LEAGUE_IDS.keys()]
+        )
         await ctx.send(f"Unknown league '{league}'. Available: {available_leagues}")
         return
 
@@ -386,7 +190,11 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
 
         # Display finished/live matches first
         for match in finished_or_live[:10]:
-            score = f"{match.home_score}-{match.away_score}" if match.home_score is not None else "TBD"
+            score = (
+                f"{match.home_score}-{match.away_score}"
+                if match.home_score is not None
+                else "TBD"
+            )
             status_emoji = "🔴" if match.is_live else "✅"
 
             # Add flag emojis for World Cup matches
@@ -411,14 +219,17 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
             us_broadcast_channels = []
             if match.page_slug:
                 try:
-                    details = await fotmob_client.get_match_details(page_slug=match.page_slug)
+                    details = await fotmob_client.get_match_details(
+                        page_slug=match.page_slug
+                    )
                     if details:
                         if details.match.venue:
                             venue_info = details.match.venue
                         # Extract US broadcast channels
                         if details.broadcast_channels:
                             us_broadcast_channels = [
-                                ch.channel_name for ch in details.broadcast_channels
+                                ch.channel_name
+                                for ch in details.broadcast_channels
                                 if ch.country_name and "USA" in ch.country_name.upper()
                             ]
                 except Exception:
@@ -485,6 +296,7 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
 
     except Exception as e:
         import traceback
+
         await ctx.send(f"Error fetching matches: {e}")
         print(traceback.format_exc())
 
@@ -501,14 +313,18 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
       !standings Premier
     """
     if fotmob_client is None:
-        await ctx.send("FotMob client not initialized. Please wait for bot to fully start.")
+        await ctx.send(
+            "FotMob client not initialized. Please wait for bot to fully start."
+        )
         return
 
     # Resolve league name/alias to canonical name and ID
     league_key, league_id = resolve_league_name(league)
 
     if not league_id or not league_key:
-        available_leagues = ", ".join([format_league_name(k) for k in LEAGUE_IDS.keys()])
+        available_leagues = ", ".join(
+            [format_league_name(k) for k in LEAGUE_IDS.keys()]
+        )
         await ctx.send(f"Unknown league '{league}'. Available: {available_leagues}")
         return
 
@@ -517,7 +333,11 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
     try:
         standings_data = await fotmob_client.get_league_standings(league_id)
 
-        if not standings_data or not isinstance(standings_data, list) or len(standings_data) == 0:
+        if (
+            not standings_data
+            or not isinstance(standings_data, list)
+            or len(standings_data) == 0
+        ):
             await ctx.send(f"No standings found for {league_display}")
             return
 
@@ -541,7 +361,9 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
             lines = [f"**{table_name}**\n"]
             lines.append("```")
             # Header
-            lines.append(f"{'#':<3} {'Team':<20} {'P':<3} {'W':<3} {'D':<3} {'L':<3} {'GD':<4} {'Pts':<4}")
+            lines.append(
+                f"{'#':<3} {'Team':<20} {'P':<3} {'W':<3} {'D':<3} {'L':<3} {'GD':<4} {'Pts':<4}"
+            )
             lines.append("-" * 50)
 
             # Teams (top 10)
@@ -555,7 +377,9 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
                 gd = team.get("goalConDiff", 0)
                 pts = team.get("pts", 0)
 
-                lines.append(f"{pos:<3} {name:<20} {played:<3} {wins:<3} {draws:<3} {losses:<3} {gd:<4} {pts:<4}")
+                lines.append(
+                    f"{pos:<3} {name:<20} {played:<3} {wins:<3} {draws:<3} {losses:<3} {gd:<4} {pts:<4}"
+                )
 
             lines.append("```")
             responses.append("\n".join(lines))
@@ -566,6 +390,7 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
 
     except Exception as e:
         import traceback
+
         await ctx.send(f"Error fetching standings: {e}")
         print(traceback.format_exc())
 
@@ -605,7 +430,11 @@ async def dice(ctx: commands.Context, notation: str):
 
 async def shutdown():
     """Clean shutdown of async resources."""
-    global fotmob_client
+    global fotmob_client, world_cup_task
+
+    if world_cup_task:
+        world_cup_task.stop()
+
     if fotmob_client:
         await fotmob_client.close()
 
@@ -620,6 +449,7 @@ def main():
         bot.run(token)
     finally:
         import asyncio
+
         if fotmob_client:
             asyncio.run(shutdown())
 

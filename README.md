@@ -23,12 +23,41 @@ Discord bot for soccer match information, powered by FotMob data.
 # Install dependencies
 uv sync
 
+# Install pre-commit hooks (optional but recommended)
+uv tool install pre-commit
+pre-commit install
+
 # Set your Discord bot token
 export DISCORD_TOKEN="your_token_here"
 
 # Run the bot
 uv run python bot.py
 ```
+
+## Configuration
+
+The bot uses `config.json` for settings. Create it in the project root:
+
+```json
+{
+  "world_cup": {
+    "enabled": true,
+    "channel_name": "world-cup",
+    "live_channel_name": "world-cup-live",
+    "daily_time_hour": 8,
+    "timezone": "America/Los_Angeles"
+  }
+}
+```
+
+**World Cup Settings:**
+- `enabled`: Toggle daily World Cup updates on/off
+- `channel_name`: Discord channel name (without #) for daily spoiler-free updates
+- `live_channel_name`: Discord channel name (without #) for real-time updates with spoilers
+- `daily_time_hour`: Hour (0-23) for daily updates
+- `timezone`: IANA timezone name (e.g., "America/Los_Angeles", "America/New_York")
+
+If `config.json` is missing, the bot will run with World Cup updates disabled.
 
 ## Commands
 
@@ -126,21 +155,48 @@ All times displayed in **Pacific Time (PT)**, automatically handling PST/PDT tra
 
 ```
 lafcbot/
-├── fotmob/              # FotMob wrapper library
-│   ├── client.py        # HTTP client with rate limiting
-│   ├── constants.py     # League IDs and configuration
-│   ├── models.py        # Data models
-│   ├── parser.py        # HTML/JSON extraction
-│   └── __init__.py      # Public API
-├── bot.py               # Discord bot with commands
-├── pyproject.toml       # Dependencies and metadata
-└── README.md            # This file
+├── fotmob/                    # FotMob wrapper library
+│   ├── client.py              # HTTP client with rate limiting
+│   ├── constants.py           # League IDs and configuration
+│   ├── models.py              # Data models
+│   ├── parser.py              # HTML/JSON extraction
+│   └── __init__.py            # Public API
+├── bot.py                     # Discord bot with commands
+├── world_cup.py               # World Cup functionality
+├── config.json                # Bot configuration (user-created)
+├── .pre-commit-config.yaml    # Pre-commit hook configuration
+├── ruff.toml                  # Ruff linting rules
+├── pyproject.toml             # Dependencies and metadata
+└── README.md                  # This file
 ```
 
 ## Dependencies
 
 - `py-cord>=2.0` - Discord bot framework
 - `aiohttp>=3.9.0` - Async HTTP client
+
+## Development
+
+### Code Quality
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting. Pre-commit hooks automatically run Ruff on all staged files.
+
+```bash
+# Install pre-commit hooks
+uv tool install pre-commit
+pre-commit install
+
+# Run manually on all files
+pre-commit run --all-files
+
+# Run ruff directly
+uv tool run ruff check .
+uv tool run ruff format .
+```
+
+**Configuration:**
+- `.pre-commit-config.yaml` - Pre-commit hook configuration
+- `ruff.toml` - Ruff linting and formatting rules
 
 ## Important Notes
 

@@ -1,13 +1,14 @@
 """Data models for FotMob match and league data."""
 
 from dataclasses import dataclass
-from typing import Optional, List
 from datetime import datetime
+from typing import Optional
 
 
 @dataclass
 class Team:
     """Represents a soccer team."""
+
     id: int
     name: str
     logo_url: Optional[str] = None
@@ -16,6 +17,7 @@ class Team:
 @dataclass
 class MatchEvent:
     """Represents a match event (goal, card, substitution, etc.)."""
+
     type: str  # "goal", "card", "substitution", etc.
     minute: int
     team_id: int
@@ -26,6 +28,7 @@ class MatchEvent:
 @dataclass
 class Venue:
     """Represents a stadium/venue."""
+
     name: str
     city: Optional[str] = None
     country: Optional[str] = None
@@ -35,6 +38,7 @@ class Venue:
 @dataclass
 class Match:
     """Represents basic match information."""
+
     id: int
     home_team: Team
     away_team: Team
@@ -59,6 +63,7 @@ class Match:
 @dataclass
 class BroadcastChannel:
     """Represents a TV broadcast channel."""
+
     channel_name: str
     country_name: str
 
@@ -66,17 +71,19 @@ class BroadcastChannel:
 @dataclass
 class MatchDetails:
     """Represents detailed match information including events and stats."""
+
     match: Match
-    events: List[MatchEvent]
+    events: list[MatchEvent]
     stats: dict
     lineups: Optional[dict] = None
-    broadcast_channels: Optional[List[BroadcastChannel]] = None
+    broadcast_channels: Optional[list[BroadcastChannel]] = None
 
 
 @dataclass
 class League:
     """Represents a soccer league."""
+
     id: int
     name: str
-    matches: List[Match]
+    matches: list[Match]
     standings: Optional[dict] = None

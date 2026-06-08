@@ -9,8 +9,8 @@ HEADERS = {
 
 LEAGUE_IDS = {
     "mls": 130,
-    "nwsl": 289,  # To be verified
-    "world_cup": 77,  # To be verified
+    "nwsl": 9134,  # To be verified
+    "world_cup": 77,
     "premier_league": 47,
     "champions_league": 42,
 }
@@ -20,22 +20,18 @@ LEAGUE_ALIASES = {
     # MLS aliases
     "major league soccer": "mls",
     "major_league_soccer": "mls",
-
     # NWSL aliases
     "national womens soccer league": "nwsl",
     "womens": "nwsl",
-
     # World Cup aliases
     "world cup": "world_cup",
     "worldcup": "world_cup",
     "wc": "world_cup",
-
     # Premier League aliases
     "premier league": "premier_league",
     "premier": "premier_league",
     "epl": "premier_league",
     "english premier league": "premier_league",
-
     # Champions League aliases
     "champions league": "champions_league",
     "champions": "champions_league",

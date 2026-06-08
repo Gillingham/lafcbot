@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Optional, List, Dict
+from typing import Optional
 
 
 def extract_next_data(html: str) -> Optional[dict]:
@@ -19,18 +19,18 @@ def extract_next_data(html: str) -> Optional[dict]:
     Returns:
         The parsed pageProps dictionary, or None if extraction failed
     """
-    marker = '__NEXT_DATA__'
+    marker = "__NEXT_DATA__"
 
     marker_idx = html.find(marker)
     if marker_idx == -1:
         return None
 
-    start_idx = html.find('>', marker_idx)
+    start_idx = html.find(">", marker_idx)
     if start_idx == -1:
         return None
     start_idx += 1
 
-    end_idx = html.find('</script>', start_idx)
+    end_idx = html.find("</script>", start_idx)
     if end_idx == -1:
         return None
 
@@ -38,7 +38,7 @@ def extract_next_data(html: str) -> Optional[dict]:
 
     try:
         data = json.loads(json_str)
-        page_props = data.get('props', {}).get('pageProps', {})
+        page_props = data.get("props", {}).get("pageProps", {})
         return page_props
     except (json.JSONDecodeError, KeyError):
         return None
@@ -51,7 +51,7 @@ def extract_page_props(html: str) -> Optional[dict]:
     return extract_next_data(html)
 
 
-def extract_broadcast_channels(html: str) -> List[Dict[str, str]]:
+def extract_broadcast_channels(html: str) -> list[dict[str, str]]:
     """
     Extract broadcast/TV channel information from FotMob HTML.
 
@@ -64,7 +64,7 @@ def extract_broadcast_channels(html: str) -> List[Dict[str, str]]:
     Returns:
         List of dictionaries with channelName and countryName, or empty list if not found
     """
-    if 'broadcastChannels' not in html:
+    if "broadcastChannels" not in html:
         return []
 
     try:
@@ -76,7 +76,7 @@ def extract_broadcast_channels(html: str) -> List[Dict[str, str]]:
             return []
 
         # Parse the JSON
-        channels_json = '[' + matches[0] + ']'
+        channels_json = "[" + matches[0] + "]"
         channels = json.loads(channels_json)
 
         return channels
