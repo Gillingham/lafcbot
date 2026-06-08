@@ -42,11 +42,12 @@ def load_config() -> dict:
                 "channel_name": "world-cup",
                 "daily_time_hour": 8,
                 "timezone": "America/Los_Angeles",
-            }
+            },
+            "channel_leagues": {},
         }
     except json.JSONDecodeError as e:
         print(f"Error parsing config.json: {e}")
-        return {"world_cup": {"enabled": False}}
+        return {"world_cup": {"enabled": False}, "channel_leagues": {}}
 
 
 intents = discord.Intents.default()
@@ -104,13 +105,15 @@ async def servers(ctx: commands.Context):
 
 
 @bot.command()
-async def matches(ctx: commands.Context, *, league: str = "mls"):
+async def matches(ctx: commands.Context, *, league: str | None = None):
     """
     Show matches for a league.
 
     Usage: !matches [league]
+    If no league is specified, uses the league configured for this channel.
+
     Examples:
-      !matches
+      !matches                # Uses channel-configured league or MLS default
       !matches mls
       !matches World Cup
       !matches Premier
@@ -121,6 +124,21 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
             "FotMob client not initialized. Please wait for bot to fully start."
         )
         return
+
+    # Determine league to use
+    if league is None:
+        # No explicit league provided - check channel configuration
+        config = load_config()
+        channel_leagues = config.get("channel_leagues", {})
+        channel_name = ctx.channel.name if hasattr(ctx.channel, "name") else None
+
+        if channel_name and channel_name in channel_leagues:
+            league = str(channel_leagues[channel_name])
+        else:
+            league = "mls"  # Default fallback
+
+    # At this point league is always a string
+    assert isinstance(league, str)
 
     # Resolve league name/alias to canonical name and ID
     league_key, league_id = resolve_league_name(league)

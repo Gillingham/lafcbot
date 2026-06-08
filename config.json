@@ -1,4 +1,9 @@
 {
+  "channel_leagues": {
+    "angel-city-fc-news": "nwsl",
+    "world-cup-2026": "world_cup",
+    "world-cup-2026-live": "world_cup"
+  },
   "world_cup": {
     "enabled": true,
     "channel_name": "world-cup-2026",

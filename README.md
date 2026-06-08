@@ -44,6 +44,13 @@ The bot uses `config.json` for settings. Create it in the project root:
 
 ```json
 {
+  "channel_leagues": {
+    "mls": "mls",
+    "nwsl": "nwsl",
+    "premier-league": "premier_league",
+    "ucl": "champions_league",
+    "world-cup-2026": "world_cup"
+  },
   "world_cup": {
     "enabled": true,
     "channel_name": "world-cup-2026",
@@ -67,6 +74,21 @@ The bot uses `config.json` for settings. Create it in the project root:
   }
 }
 ```
+
+### Channel-Specific Leagues
+
+Configure which league `!matches` shows by default in each channel:
+
+The `channel_leagues` section maps Discord channel names to league identifiers. When `!matches` is called without arguments in a mapped channel, it shows that league's matches automatically.
+
+**Valid league identifiers:**
+- `mls` - Major League Soccer
+- `nwsl` - National Women's Soccer League
+- `premier_league` - English Premier League
+- `champions_league` - UEFA Champions League
+- `world_cup` - FIFA World Cup
+
+**Example:** In the `#premier-league` channel, typing `!matches` will show Premier League matches. In unmapped channels, it defaults to MLS.
 
 **World Cup Settings:**
 
@@ -96,9 +118,11 @@ If `config.json` is missing, the bot will run with World Cup updates disabled.
 ### `!matches [league]`
 Shows matches for the current day, or the next day with matches if none today.
 
+**If no league is specified**, the command uses the league configured for the current Discord channel (see Configuration below). If no channel mapping exists, defaults to MLS.
+
 **Examples:**
 ```
-!matches                # MLS (default)
+!matches                # Uses channel-configured league (or MLS if none)
 !matches World Cup      # World Cup with country flags
 !matches Premier        # Premier League
 !matches UCL            # Champions League
