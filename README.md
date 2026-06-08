@@ -153,9 +153,11 @@ Shows matches for the current day, or the next day with matches if none today.
 ### `!standings [league]`
 Shows league standings/tables.
 
+**If no league is specified**, the command uses the league configured for the current Discord channel (see Configuration below). If no channel mapping exists, defaults to MLS.
+
 **Examples:**
 ```
-!standings              # MLS (default)
+!standings              # Uses channel-configured league (or MLS if none)
 !standings World Cup    # World Cup group standings
 !standings Premier      # Premier League table
 ```

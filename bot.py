@@ -334,12 +334,15 @@ async def matches(ctx: commands.Context, *, league: str | None = None):
 
 
 @bot.command()
-async def standings(ctx: commands.Context, *, league: str = "mls"):
+async def standings(ctx: commands.Context, *, league: str | None = None):
     """
     Show league standings.
 
     Usage: !standings [league]
+    If no league is specified, uses the league configured for this channel.
+
     Examples:
+      !standings              # Uses channel-configured league or MLS default
       !standings mls
       !standings World Cup
       !standings Premier
@@ -349,6 +352,21 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
             "FotMob client not initialized. Please wait for bot to fully start."
         )
         return
+
+    # Determine league to use
+    if league is None:
+        # No explicit league provided - check channel configuration
+        config = load_config()
+        channel_leagues = config.get("channel_leagues", {})
+        channel_name = ctx.channel.name if hasattr(ctx.channel, "name") else None
+
+        if channel_name and channel_name in channel_leagues:
+            league = str(channel_leagues[channel_name])
+        else:
+            league = "mls"  # Default fallback
+
+    # At this point league is always a string
+    assert isinstance(league, str)
 
     # Resolve league name/alias to canonical name and ID
     league_key, league_id = resolve_league_name(league)
