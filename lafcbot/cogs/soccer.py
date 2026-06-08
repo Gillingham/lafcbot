@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 
 from discord.ext import commands
 
-from bot import load_config
-from fotmob import FotMobClient, format_league_name, resolve_league_name
-from fotmob.constants import LEAGUE_IDS
-from world_cup import get_country_flag
+from lafcbot.bot import load_config
+from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
+from lafcbot.clients.fotmob.constants import LEAGUE_IDS
+from lafcbot.tasks.world_cup import get_country_flag
 
 
 class SoccerCog(commands.Cog):

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import tasks
 
-from reddit_client import RedditGoalFetcher
+from lafcbot.clients import reddit_client
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class WorldCupTask:
         self.config = config
         self.daily_task = None
         self.live_task = None
-        self.reddit_client = RedditGoalFetcher()
+        self.reddit_client = reddit_client.RedditGoalFetcher()
 
         # State tracking for monitored matches
         # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}

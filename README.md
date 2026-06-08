@@ -35,7 +35,7 @@ pre-commit install
 export DISCORD_TOKEN="your_token_here"
 
 # Run the bot
-uv run python bot.py
+uv run python run.py
 ```
 
 ## Configuration
@@ -231,15 +231,26 @@ All times displayed in **Pacific Time (PT)**, automatically handling PST/PDT tra
 
 ```
 lafcbot/
-├── fotmob/                    # FotMob wrapper library
-│   ├── client.py              # HTTP client with rate limiting
-│   ├── constants.py           # League IDs and configuration
-│   ├── models.py              # Data models (Match, MatchEvent, Highlight, etc.)
-│   ├── parser.py              # HTML/JSON extraction
-│   └── __init__.py            # Public API
-├── bot.py                     # Discord bot with commands
-├── world_cup.py               # World Cup daily schedule + live monitoring
-├── reddit_client.py           # Reddit r/soccer clip fetcher with caching
+├── lafcbot/                   # Main package
+│   ├── __init__.py            # Package exports
+│   ├── bot.py                 # Discord bot setup and core commands
+│   ├── cogs/                  # Discord command cogs
+│   │   ├── __init__.py
+│   │   ├── soccer.py          # Soccer commands (matches, standings, match)
+│   │   └── misc.py            # Fun commands (wut, dice, 8ball)
+│   ├── tasks/                 # Background tasks
+│   │   ├── __init__.py
+│   │   └── world_cup.py       # World Cup daily schedule + live monitoring
+│   └── clients/               # API clients
+│       ├── __init__.py
+│       ├── fotmob/            # FotMob wrapper library
+│       │   ├── client.py      # HTTP client with rate limiting
+│       │   ├── constants.py   # League IDs and configuration
+│       │   ├── models.py      # Data models (Match, MatchEvent, Highlight, etc.)
+│       │   ├── parser.py      # HTML/JSON extraction
+│       │   └── __init__.py    # Public API
+│       └── reddit_client.py   # Reddit r/soccer clip fetcher with caching
+├── run.py                     # Entry point
 ├── config.json                # Bot configuration (user-created)
 ├── WORLD_CUP_FEATURES.md      # Detailed World Cup features documentation
 ├── .pre-commit-config.yaml    # Pre-commit hook configuration

@@ -9,7 +9,8 @@ from discord.ext import commands
 
 def load_config() -> dict:
     """Load configuration from config.json."""
-    config_path = Path(__file__).parent / "config.json"
+    # Navigate up from lafcbot/bot.py to project root
+    config_path = Path(__file__).parent.parent / "config.json"
     try:
         with open(config_path) as f:
             return json.load(f)
@@ -49,13 +50,13 @@ async def on_ready():
 
     # Load cogs
     try:
-        bot.load_extension("soccer")
+        bot.load_extension("lafcbot.cogs.soccer")
         print("Loaded soccer cog")
     except Exception as e:
         print(f"Failed to load soccer cog: {e}")
 
     try:
-        bot.load_extension("misc")
+        bot.load_extension("lafcbot.cogs.misc")
         print("Loaded misc cog")
     except Exception as e:
         print(f"Failed to load misc cog: {e}")
@@ -65,7 +66,7 @@ async def on_ready():
     wc_config = config.get("world_cup", {})
 
     if wc_config.get("enabled", False):
-        from world_cup import WorldCupTask
+        from lafcbot.tasks.world_cup import WorldCupTask
 
         # Get fotmob_client from the soccer cog
         soccer_cog = bot.get_cog("SoccerCog")
