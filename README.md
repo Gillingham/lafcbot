@@ -10,6 +10,10 @@ Discord bot for soccer match information, powered by FotMob data.
 - 🌍 Support for major leagues (MLS, NWSL, World Cup, Premier League, Champions League)
 - ⏰ Times displayed in Pacific Time (PT)
 - 🚩 Country flags for World Cup matches
+- ⚽ **Real-time goal notifications** for World Cup matches
+- 🎥 **Automatic Reddit replay clips** from r/soccer
+- 🏁 **Post-match summaries** with highlights
+- ⏱️ **Extra time and penalty shootout alerts**
 
 ## Prerequisites
 
@@ -42,20 +46,48 @@ The bot uses `config.json` for settings. Create it in the project root:
 {
   "world_cup": {
     "enabled": true,
-    "channel_name": "world-cup",
-    "live_channel_name": "world-cup-live",
+    "channel_name": "world-cup-2026",
     "daily_time_hour": 8,
-    "timezone": "America/Los_Angeles"
+    "timezone": "America/Los_Angeles",
+    "live_monitoring": {
+      "enabled": true,
+      "channel_name": "world-cup-2026-live",
+      "check_interval_seconds": 60,
+      "notifications": {
+        "goals": true,
+        "extra_time": true,
+        "penalties": true,
+        "include_reddit_clips": true
+      }
+    },
+    "highlights": {
+      "reddit_enabled": true,
+      "cache_path": "~/.lafcbot/reddit_cache.json"
+    }
   }
 }
 ```
 
 **World Cup Settings:**
-- `enabled`: Toggle daily World Cup updates on/off
-- `channel_name`: Discord channel name (without #) for daily spoiler-free updates
-- `live_channel_name`: Discord channel name (without #) for real-time updates with spoilers
-- `daily_time_hour`: Hour (0-23) for daily updates
+
+**Basic Settings:**
+- `enabled`: Toggle all World Cup features on/off
+- `channel_name`: Discord channel for daily spoiler-free match schedules
+- `daily_time_hour`: Hour (0-23) for daily schedule posts
 - `timezone`: IANA timezone name (e.g., "America/Los_Angeles", "America/New_York")
+
+**Live Monitoring:**
+- `live_monitoring.enabled`: Enable real-time goal notifications and live match monitoring
+- `live_monitoring.channel_name`: Discord channel for live updates (can have spoilers)
+- `live_monitoring.check_interval_seconds`: How often to check for updates (default: 60)
+- `notifications.goals`: Enable goal notifications
+- `notifications.extra_time`: Enable extra time alerts
+- `notifications.penalties`: Enable penalty shootout alerts
+- `notifications.include_reddit_clips`: Automatically fetch Reddit replay clips
+
+**Highlights:**
+- `highlights.reddit_enabled`: Enable Reddit r/soccer clip searching
+- `highlights.cache_path`: Where to cache found clips
 
 If `config.json` is missing, the bot will run with World Cup updates disabled.
 
@@ -109,6 +141,22 @@ Shows league standings/tables.
 - Position, Team, Played, Wins, Draws, Losses, Goal Difference, Points
 - Multiple tables for leagues with conferences (e.g., MLS Eastern/Western)
 
+### `!match <match_id>`
+Shows detailed match summary with goals, assists, and highlights.
+
+**Examples:**
+```
+!match 4193490
+```
+
+**Output includes:**
+- Match status (Live, Finished, or Upcoming)
+- Final score or current score
+- All goals with scorer and assist information
+- 🎥 Official match highlights link (if available)
+- 🏟️ Venue information
+- Penalty shootout results (if applicable)
+
 ### Other Commands
 
 - `!ping` - Check bot latency
@@ -143,9 +191,11 @@ The bot includes a complete async Python library for scraping FotMob:
 
 ### Data Sources
 
-- **Match Data:** FotMob.com (via HTML scraping)
+- **Match Data:** FotMob.com (via HTML scraping and API)
 - **Venue Information:** Extracted from match details pages
 - **TV Providers:** Extracted from match page HTML (US only)
+- **Goal Replay Clips:** Reddit r/soccer (via public JSON API)
+- **Highlights:** FotMob official highlights URLs
 
 ### Time Zones
 
@@ -158,12 +208,14 @@ lafcbot/
 ├── fotmob/                    # FotMob wrapper library
 │   ├── client.py              # HTTP client with rate limiting
 │   ├── constants.py           # League IDs and configuration
-│   ├── models.py              # Data models
+│   ├── models.py              # Data models (Match, MatchEvent, Highlight, etc.)
 │   ├── parser.py              # HTML/JSON extraction
 │   └── __init__.py            # Public API
 ├── bot.py                     # Discord bot with commands
-├── world_cup.py               # World Cup functionality
+├── world_cup.py               # World Cup daily schedule + live monitoring
+├── reddit_client.py           # Reddit r/soccer clip fetcher with caching
 ├── config.json                # Bot configuration (user-created)
+├── WORLD_CUP_FEATURES.md      # Detailed World Cup features documentation
 ├── .pre-commit-config.yaml    # Pre-commit hook configuration
 ├── ruff.toml                  # Ruff linting rules
 ├── pyproject.toml             # Dependencies and metadata
@@ -173,7 +225,9 @@ lafcbot/
 ## Dependencies
 
 - `py-cord>=2.0` - Discord bot framework
-- `aiohttp>=3.9.0` - Async HTTP client
+- `aiohttp>=3.9.0` - Async HTTP client (for FotMob and Reddit APIs)
+- `beautifulsoup4>=4.12.0` - HTML parsing
+- `lxml>=5.0.0` - Fast XML/HTML processing
 
 ## Development
 
@@ -227,8 +281,54 @@ The bot respects FotMob's servers:
 - May break if FotMob updates their website
 - FotMob's old API endpoints are deprecated (return 404)
 
+## World Cup Live Monitoring
+
+For detailed information about World Cup live monitoring features, see [WORLD_CUP_FEATURES.md](WORLD_CUP_FEATURES.md).
+
+### Quick Overview
+
+When live monitoring is enabled, the bot will:
+
+1. **Monitor live World Cup matches** every 60 seconds
+2. **Send instant notifications** when goals are scored, including:
+   - Scorer and assist
+   - Current score
+   - Country flags
+   - Automatic Reddit replay clips (when available)
+3. **Alert on special events:**
+   - Extra time notifications
+   - Penalty shootout alerts
+4. **Post automatic summaries** when matches finish with:
+   - All goals and assists
+   - Official FotMob highlights
+   - Final score and penalty results
+
+### Example Notifications
+
+**Goal:**
+```
+⚽ GOAL! 🇪🇸 Spain 2-1 🇩🇪 Germany
+
+Scorer: Álvaro Morata 67'
+Assist: Dani Olmo
+
+🎥 Replay
+```
+
+**Post-Match:**
+```
+🏁 FINAL: 🇪🇸 Spain 3-1 🇩🇪 Germany
+
+⚽ Goals:
+12' - Pedri
+34' - Morata (Olmo)
+67' - Morata
+
+📺 Official Highlights: [Watch](...)
+```
+
 ## Credits
 
-- Implementation inspired by [golazo project](https://github.com/0xjuanma/golazo)
-- Data from FotMob.com
+- Goal notification system inspired by [golazo project](https://github.com/0xjuanma/golazo)
+- Data from FotMob.com and Reddit r/soccer
 - Built with py-cord

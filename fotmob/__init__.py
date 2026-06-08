@@ -8,10 +8,12 @@ and web scraping for match results, statistics, and details.
 from .client import FotMobClient
 from .models import (
     BroadcastChannel,
+    Highlight,
     League,
     Match,
     MatchDetails,
     MatchEvent,
+    PenaltyShootout,
     Team,
     Venue,
 )
@@ -76,6 +78,8 @@ __all__ = [
     "MatchEvent",
     "Venue",
     "BroadcastChannel",
+    "Highlight",
+    "PenaltyShootout",
     "resolve_league_name",
     "format_league_name",
 ]

@@ -25,7 +25,6 @@ def load_config() -> dict:
             "world_cup": {
                 "enabled": False,
                 "channel_name": "world-cup",
-                "live_channel_name": "world-cup-live",
                 "daily_time_hour": 8,
                 "timezone": "America/Los_Angeles",
             }
@@ -392,6 +391,116 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
         import traceback
 
         await ctx.send(f"Error fetching standings: {e}")
+        print(traceback.format_exc())
+
+
+@bot.command()
+async def match(ctx: commands.Context, match_id: int):
+    """
+    Show detailed match summary with highlights and goal clips.
+
+    Usage: !match <match_id>
+    Example: !match 4193490
+    """
+    if fotmob_client is None:
+        await ctx.send(
+            "FotMob client not initialized. Please wait for bot to fully start."
+        )
+        return
+
+    try:
+        # Fetch match details
+        details = await fotmob_client.get_match_details(match_id=match_id)
+
+        if not details:
+            await ctx.send(f"Match {match_id} not found")
+            return
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+
+        # Get flags if World Cup match
+        home_flag = ""
+        away_flag = ""
+        if match.league_id == 77:  # World Cup
+            home_flag = get_country_flag(home_team)
+            away_flag = get_country_flag(away_team)
+
+        # Calculate score from events
+        home_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.home_team.id
+            ]
+        )
+        away_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.away_team.id
+            ]
+        )
+
+        # Build message
+        status_emoji = "🏁" if match.is_finished else "🔴" if match.is_live else "📅"
+
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_flag} {away_team}" if away_flag else away_team
+
+        lines = [
+            f"{status_emoji} **{home_display} {home_goals}-{away_goals} {away_display}**\n"
+        ]
+
+        # Add penalty result if applicable
+        if details.penalties:
+            lines.append(
+                f"**Penalties:** {home_team} {details.penalties.home_score}-{details.penalties.away_score} {away_team}\n"
+            )
+
+        # Add goals
+        goal_events = [e for e in details.events if e.type.lower() == "goal"]
+        if goal_events:
+            lines.append("**⚽ Goals:**")
+            for goal in goal_events:
+                scorer = goal.player_name or "Unknown"
+                minute = goal.minute
+                goal_line = f"{minute}' - {scorer}"
+
+                if goal.own_goal:
+                    goal_line += " (OG)"
+                elif goal.assist_name:
+                    goal_line += f" ({goal.assist_name})"
+
+                lines.append(goal_line)
+            lines.append("")
+
+        # Add official highlights if available
+        if details.highlight:
+            lines.append(
+                f"📺 **Official Highlights:** [Watch]({details.highlight.url})"
+            )
+
+        # Add venue info if available
+        if match.venue:
+            venue_text = match.venue.name
+            if match.venue.city:
+                venue_text += f", {match.venue.city}"
+            lines.append(f"🏟️ **Venue:** {venue_text}")
+
+        message = "\n".join(lines)
+
+        # Truncate if too long
+        if len(message) > 2000:
+            message = message[:1997] + "..."
+
+        await ctx.send(message)
+
+    except Exception as e:
+        import traceback
+
+        await ctx.send(f"Error fetching match details: {e}")
         print(traceback.format_exc())
 
 

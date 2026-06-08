@@ -18,11 +18,14 @@ class Team:
 class MatchEvent:
     """Represents a match event (goal, card, substitution, etc.)."""
 
+    id: int  # Unique event ID for deduplication
     type: str  # "goal", "card", "substitution", etc.
     minute: int
     team_id: int
     player_name: Optional[str] = None
+    assist_name: Optional[str] = None  # Assist player for goals
     description: Optional[str] = None
+    own_goal: bool = False  # Whether this is an own goal
 
 
 @dataclass
@@ -69,6 +72,22 @@ class BroadcastChannel:
 
 
 @dataclass
+class Highlight:
+    """Represents match highlight video information."""
+
+    url: str
+    title: Optional[str] = None
+
+
+@dataclass
+class PenaltyShootout:
+    """Represents penalty shootout information."""
+
+    home_score: int
+    away_score: int
+
+
+@dataclass
 class MatchDetails:
     """Represents detailed match information including events and stats."""
 
@@ -77,6 +96,9 @@ class MatchDetails:
     stats: dict
     lineups: Optional[dict] = None
     broadcast_channels: Optional[list[BroadcastChannel]] = None
+    highlight: Optional[Highlight] = None  # Official match highlights
+    extra_time: bool = False  # Whether match went to extra time
+    penalties: Optional[PenaltyShootout] = None  # Penalty shootout result
 
 
 @dataclass

@@ -8,7 +8,16 @@ from typing import Optional
 import aiohttp
 
 from .constants import BASE_URL, HEADERS, MAX_RETRIES, REQUEST_DELAY, RETRY_DELAY
-from .models import BroadcastChannel, Match, MatchDetails, MatchEvent, Team, Venue
+from .models import (
+    BroadcastChannel,
+    Highlight,
+    Match,
+    MatchDetails,
+    MatchEvent,
+    PenaltyShootout,
+    Team,
+    Venue,
+)
 from .parser import extract_broadcast_channels, extract_page_props
 
 logger = logging.getLogger(__name__)
@@ -253,6 +262,24 @@ class FotMobClient:
 
         return None
 
+    async def get_live_world_cup_matches(self) -> list[Match]:
+        """
+        Get all currently live World Cup matches.
+
+        Returns:
+            List of live Match objects for World Cup (league ID 77)
+        """
+        # World Cup league ID
+        world_cup_id = 77
+
+        # Get all World Cup matches
+        all_matches = await self.get_league_matches(world_cup_id)
+
+        # Filter for only live matches
+        live_matches = [m for m in all_matches if m.is_live]
+
+        return live_matches
+
     def _parse_matches_from_api(self, data: dict) -> list[Match]:
         """Parse matches from API response."""
         matches = []
@@ -405,18 +432,60 @@ class FotMobClient:
             .get("events", {})
             .get("events", [])
         ):
+            # Extract assist for goals
+            assist_name = None
+            if event_data.get("type") == "Goal":
+                # Assist can be in multiple places
+                assist_data = event_data.get("assist")
+                if assist_data:
+                    if isinstance(assist_data, dict):
+                        assist_name = assist_data.get("name")
+                    elif isinstance(assist_data, str):
+                        assist_name = assist_data
+
             events.append(
                 MatchEvent(
+                    id=event_data.get("eventId", event_data.get("id", 0)),
                     type=event_data.get("type", "unknown"),
                     minute=event_data.get("time", 0),
                     team_id=event_data.get("teamId", 0),
-                    player_name=event_data.get("player", {}).get("name"),
+                    player_name=event_data.get("player", {}).get("name")
+                    if isinstance(event_data.get("player"), dict)
+                    else event_data.get("player"),
+                    assist_name=assist_name,
                     description=event_data.get("text"),
+                    own_goal=event_data.get("isOwnGoal", False),
                 )
             )
 
         stats = data.get("content", {}).get("stats", {})
         lineups = data.get("content", {}).get("lineup", {})
+
+        # Parse highlight video
+        highlight = None
+        highlight_data = data.get("content", {}).get("highlightVideo")
+        if highlight_data and isinstance(highlight_data, dict):
+            highlight_url = highlight_data.get("url")
+            if highlight_url:
+                highlight = Highlight(
+                    url=highlight_url, title=highlight_data.get("title")
+                )
+
+        # Check for extra time
+        extra_time = general.get("extraTime", False) or general.get(
+            "hasExtraTime", False
+        )
+
+        # Parse penalty shootout
+        penalties = None
+        penalty_data = data.get("content", {}).get("shootoutDetails")
+        if penalty_data and isinstance(penalty_data, dict):
+            home_pen_score = penalty_data.get("homeScore")
+            away_pen_score = penalty_data.get("awayScore")
+            if home_pen_score is not None and away_pen_score is not None:
+                penalties = PenaltyShootout(
+                    home_score=home_pen_score, away_score=away_pen_score
+                )
 
         return MatchDetails(
             match=match,
@@ -424,6 +493,9 @@ class FotMobClient:
             stats=stats,
             lineups=lineups,
             broadcast_channels=None,
+            highlight=highlight,
+            extra_time=extra_time,
+            penalties=penalties,
         )
 
     def _parse_match_details_from_page(

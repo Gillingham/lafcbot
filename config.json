@@ -2,8 +2,22 @@
   "world_cup": {
     "enabled": true,
     "channel_name": "world-cup-2026",
-    "live_channel_name": "world-cup-2026-live",
     "daily_time_hour": 8,
-    "timezone": "America/Los_Angeles"
+    "timezone": "America/Los_Angeles",
+    "live_monitoring": {
+      "enabled": true,
+      "channel_name": "world-cup-2026-live",
+      "check_interval_seconds": 60,
+      "notifications": {
+        "goals": true,
+        "extra_time": true,
+        "penalties": true,
+        "include_reddit_clips": true
+      }
+    },
+    "highlights": {
+      "reddit_enabled": true,
+      "cache_path": "~/.lafcbot/reddit_cache.json"
+    }
   }
 }

@@ -1,12 +1,17 @@
-"""Daily World Cup match updates task."""
+"""Daily World Cup match updates and live monitoring task."""
 
 import asyncio
+import logging
 import traceback
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import tasks
+
+from reddit_client import RedditGoalFetcher
+
+logger = logging.getLogger(__name__)
 
 
 def get_country_flag(country_name: str) -> str:
@@ -102,7 +107,7 @@ def get_country_flag(country_name: str) -> str:
 
 
 class WorldCupTask:
-    """Handles daily World Cup match updates."""
+    """Handles daily World Cup match updates and live monitoring."""
 
     def __init__(self, bot, fotmob_client, config: dict):
         """
@@ -114,33 +119,57 @@ class WorldCupTask:
             config: World Cup configuration dictionary with keys:
                 - enabled: bool
                 - channel_name: str
+                - live_channel_name: str
                 - daily_time_hour: int
                 - timezone: str
+                - live_monitoring: dict with enabled, check_interval_seconds, etc.
         """
         self.bot = bot
         self.fotmob_client = fotmob_client
         self.config = config
-        self.task = None
+        self.daily_task = None
+        self.live_task = None
+        self.reddit_client = RedditGoalFetcher()
+
+        # State tracking for monitored matches
+        # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}
+        self.monitored_matches: dict[int, dict] = {}
 
     def start(self):
-        """Start the daily World Cup task if enabled."""
+        """Start the World Cup tasks if enabled."""
         if not self.config.get("enabled", False):
-            print("World Cup daily task is disabled in config")
+            print("World Cup tasks are disabled in config")
             return
 
-        if self.task is None:
-            self.task = self._create_task()
-            self.task.start()
+        # Start daily task
+        if self.daily_task is None:
+            self.daily_task = self._create_daily_task()
+            self.daily_task.start()
             print("World Cup daily task started")
 
+        # Start live monitoring task if enabled
+        live_config = self.config.get("live_monitoring", {})
+        if live_config.get("enabled", False):
+            if self.live_task is None:
+                self.live_task = self._create_live_monitoring_task()
+                self.live_task.start()
+                print("World Cup live monitoring started")
+
     def stop(self):
-        """Stop the daily World Cup task."""
-        if self.task and self.task.is_running():
-            self.task.cancel()
+        """Stop the World Cup tasks."""
+        if self.daily_task and self.daily_task.is_running():
+            self.daily_task.cancel()
             print("World Cup daily task stopped")
 
-    def _create_task(self):
-        """Create and return the task loop."""
+        if self.live_task and self.live_task.is_running():
+            self.live_task.cancel()
+            print("World Cup live monitoring stopped")
+
+        # Close Reddit client
+        asyncio.create_task(self.reddit_client.close())
+
+    def _create_daily_task(self):
+        """Create and return the daily task loop."""
 
         @tasks.loop(hours=24)
         async def daily_world_cup_matches():
@@ -326,3 +355,413 @@ class WorldCupTask:
             await asyncio.sleep(wait_seconds)
 
         return daily_world_cup_matches
+
+    def _create_live_monitoring_task(self):
+        """Create and return the live monitoring task loop."""
+        live_config = self.config.get("live_monitoring", {})
+        check_interval = live_config.get("check_interval_seconds", 60)
+
+        @tasks.loop(seconds=check_interval)
+        async def live_world_cup_monitoring():
+            """Monitor live World Cup matches for goals and events."""
+            if self.fotmob_client is None:
+                return
+
+            try:
+                # Get all live World Cup matches
+                live_matches = await self.fotmob_client.get_live_world_cup_matches()
+
+                if not live_matches:
+                    # No live matches, clean up any finished matches
+                    await self._check_finished_matches()
+                    return
+
+                # Find live monitoring channel
+                channel_name = live_config.get("channel_name", "world-cup-live")
+                channel = None
+                for guild in self.bot.guilds:
+                    channel = discord.utils.get(guild.channels, name=channel_name)
+                    if channel:
+                        break
+
+                if not channel:
+                    logger.warning(f"Live channel {channel_name} not found")
+                    return
+
+                # Check each live match for new events
+                for match in live_matches:
+                    await self._monitor_match(match, channel)
+
+                # Check for matches that finished
+                await self._check_finished_matches()
+
+            except Exception as e:
+                logger.error(f"Error in live monitoring: {e}")
+                logger.error(traceback.format_exc())
+
+        @live_world_cup_monitoring.before_loop
+        async def before_live_monitoring():
+            """Wait until bot is ready."""
+            await self.bot.wait_until_ready()
+            logger.info("World Cup live monitoring task starting...")
+
+        return live_world_cup_monitoring
+
+    async def _monitor_match(self, match, channel):
+        """
+        Monitor a single match for new events.
+
+        Args:
+            match: Match object
+            channel: Discord channel to send notifications to
+        """
+        try:
+            # Get detailed match info
+            details = await self.fotmob_client.get_match_details(match_id=match.id)
+            if not details:
+                return
+
+            match_id = match.id
+
+            # Initialize match state if not tracked
+            if match_id not in self.monitored_matches:
+                self.monitored_matches[match_id] = {
+                    "last_events": [],
+                    "last_home_score": match.home_score or 0,
+                    "last_away_score": match.away_score or 0,
+                    "was_live": True,
+                    "extra_time_sent": False,
+                    "penalties_sent": False,
+                }
+
+            state = self.monitored_matches[match_id]
+
+            # Check for new goals
+            await self._check_for_goals(details, state, channel)
+
+            # Check for extra time
+            await self._check_extra_time(details, state, channel)
+
+            # Check for penalties
+            await self._check_penalties(details, state, channel)
+
+            # Update state
+            state["last_events"] = [
+                {"id": e.id, "type": e.type, "minute": e.minute} for e in details.events
+            ]
+            state["last_home_score"] = match.home_score or 0
+            state["last_away_score"] = match.away_score or 0
+            state["was_live"] = True
+
+        except Exception as e:
+            logger.error(f"Error monitoring match {match.id}: {e}")
+
+    async def _check_for_goals(self, details, state, channel):
+        """Check for new goals and send notifications."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("goals", True):
+            return
+
+        # Get current event IDs
+        old_event_ids = {e["id"] for e in state["last_events"]}
+
+        # Find new goal events
+        new_goals = [
+            e
+            for e in details.events
+            if e.id not in old_event_ids and e.type.lower() == "goal"
+        ]
+
+        for goal in new_goals:
+            await self._send_goal_notification(details, goal, channel)
+
+    async def _send_goal_notification(self, details, goal_event, channel):
+        """Send a goal notification to Discord."""
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+
+        # Get flags
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        # Determine which team scored
+        scoring_team = (
+            home_team if goal_event.team_id == match.home_team.id else away_team
+        )
+
+        # Build message
+        scorer = goal_event.player_name or "Unknown"
+        minute = goal_event.minute
+
+        # Calculate current score (approximate based on events)
+        home_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.home_team.id
+            ]
+        )
+        away_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.away_team.id
+            ]
+        )
+
+        score_line = (
+            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
+        )
+
+        message = f"⚽ **GOAL!** {score_line}\n\n"
+
+        if goal_event.own_goal:
+            message += f"**Own Goal:** {scorer} {minute}'"
+        else:
+            message += f"**Scorer:** {scorer} {minute}'"
+            if goal_event.assist_name:
+                message += f"\n**Assist:** {goal_event.assist_name}"
+
+        # Send notification
+        sent_msg = await channel.send(message)
+
+        # Try to fetch Reddit clip in background
+        if (
+            self.config.get("live_monitoring", {})
+            .get("notifications", {})
+            .get("include_reddit_clips", True)
+        ):
+            asyncio.create_task(
+                self._add_reddit_clip(
+                    sent_msg,
+                    home_team,
+                    away_team,
+                    minute,
+                    match.start_time,
+                    scoring_team,
+                    home_goals,
+                    away_goals,
+                )
+            )
+
+    async def _add_reddit_clip(
+        self,
+        message,
+        home_team,
+        away_team,
+        minute,
+        match_time,
+        scoring_team,
+        home_score,
+        away_score,
+    ):
+        """Try to add Reddit clip link to goal notification."""
+        try:
+            result = await asyncio.wait_for(
+                self.reddit_client.search_goal(
+                    home_team=home_team,
+                    away_team=away_team,
+                    minute=minute,
+                    match_time=match_time,
+                    scoring_team=scoring_team,
+                    home_score=home_score,
+                    away_score=away_score,
+                ),
+                timeout=5.0,
+            )
+
+            if result:
+                # Edit message to add clip link
+                new_content = message.content + f"\n\n🎥 [Replay]({result['post_url']})"
+                await message.edit(content=new_content)
+
+        except asyncio.TimeoutError:
+            logger.debug(f"Reddit search timed out for goal at {minute}'")
+        except Exception as e:
+            logger.error(f"Failed to add Reddit clip: {e}")
+
+    async def _check_extra_time(self, details, state, channel):
+        """Check for extra time and send notification."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("extra_time", True):
+            return
+
+        if details.extra_time and not state["extra_time_sent"]:
+            match = details.match
+            home_team = match.home_team.name
+            away_team = match.away_team.name
+            home_flag = get_country_flag(home_team)
+            away_flag = get_country_flag(away_team)
+
+            # Get scores from events
+            home_goals = len(
+                [
+                    e
+                    for e in details.events
+                    if e.type.lower() == "goal" and e.team_id == match.home_team.id
+                ]
+            )
+            away_goals = len(
+                [
+                    e
+                    for e in details.events
+                    if e.type.lower() == "goal" and e.team_id == match.away_team.id
+                ]
+            )
+
+            message = (
+                f"⏱️ **EXTRA TIME:** {home_flag} {home_team} {home_goals}-{away_goals} "
+                f"{away_team} {away_flag}\n\nThe match is going to extra time!"
+            )
+
+            await channel.send(message)
+            state["extra_time_sent"] = True
+
+    async def _check_penalties(self, details, state, channel):
+        """Check for penalty shootout and send notification."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("penalties", True):
+            return
+
+        if details.penalties and not state["penalties_sent"]:
+            match = details.match
+            home_team = match.home_team.name
+            away_team = match.away_team.name
+            home_flag = get_country_flag(home_team)
+            away_flag = get_country_flag(away_team)
+
+            # Get regular time scores
+            home_goals = len(
+                [
+                    e
+                    for e in details.events
+                    if e.type.lower() == "goal" and e.team_id == match.home_team.id
+                ]
+            )
+            away_goals = len(
+                [
+                    e
+                    for e in details.events
+                    if e.type.lower() == "goal" and e.team_id == match.away_team.id
+                ]
+            )
+
+            message = (
+                f"🎯 **PENALTY SHOOTOUT:** {home_flag} {home_team} vs {away_team} {away_flag}\n\n"
+                f"After Extra Time: {home_team} {home_goals}-{away_goals} {away_team}\n"
+                f"The match will be decided on penalties!"
+            )
+
+            await channel.send(message)
+            state["penalties_sent"] = True
+
+    async def _check_finished_matches(self):
+        """Check for matches that finished and send post-match summaries."""
+        # Get list of match IDs we're monitoring
+        match_ids = list(self.monitored_matches.keys())
+
+        for match_id in match_ids:
+            state = self.monitored_matches[match_id]
+
+            # Only check matches that were live last time
+            if not state.get("was_live"):
+                continue
+
+            try:
+                # Get fresh match details
+                details = await self.fotmob_client.get_match_details(match_id=match_id)
+
+                if details and details.match.is_finished:
+                    # Match finished, send summary
+                    await self._send_match_summary(details)
+
+                    # Remove from monitoring
+                    del self.monitored_matches[match_id]
+
+            except Exception as e:
+                logger.error(f"Error checking finished match {match_id}: {e}")
+
+    async def _send_match_summary(self, details):
+        """Send post-match summary with highlights and goal clips."""
+        live_config = self.config.get("live_monitoring", {})
+        channel_name = live_config.get("channel_name", "world-cup-live")
+
+        # Find channel
+        channel = None
+        for guild in self.bot.guilds:
+            channel = discord.utils.get(guild.channels, name=channel_name)
+            if channel:
+                break
+
+        if not channel:
+            return
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        # Calculate final score from events
+        home_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.home_team.id
+            ]
+        )
+        away_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.away_team.id
+            ]
+        )
+
+        # Build message
+        lines = [
+            f"🏁 **FINAL:** {home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}\n"
+        ]
+
+        # Add penalty result if applicable
+        if details.penalties:
+            lines.append(
+                f"**Penalties:** {home_team} {details.penalties.home_score}-{details.penalties.away_score} {away_team}\n"
+            )
+
+        # Add goals
+        goal_events = [e for e in details.events if e.type.lower() == "goal"]
+        if goal_events:
+            lines.append("**⚽ Goals:**")
+            for goal in goal_events:
+                scorer = goal.player_name or "Unknown"
+                minute = goal.minute
+                goal_line = f"{minute}' - {scorer}"
+
+                if goal.own_goal:
+                    goal_line += " (OG)"
+                elif goal.assist_name:
+                    goal_line += f" ({goal.assist_name})"
+
+                lines.append(goal_line)
+            lines.append("")
+
+        # Add official highlights if available
+        if details.highlight:
+            lines.append(
+                f"📺 **Official Highlights:** [Watch]({details.highlight.url})"
+            )
+
+        message = "\n".join(lines)
+
+        # Send summary
+        await channel.send(message)
+
+        logger.info(f"Sent post-match summary for {home_team} vs {away_team}")
