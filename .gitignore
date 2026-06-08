@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.python-version
+.env
+*.pyc
+lafcbot.egg-info/
