@@ -17,7 +17,7 @@
     },
     "highlights": {
       "reddit_enabled": true,
-      "cache_path": "~/.lafcbot/reddit_cache.json"
+      "cache_path": "~/lafcbot/reddit_cache.json"
     }
   }
 }

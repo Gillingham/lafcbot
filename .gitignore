@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 golazo
 lafcbot.egg-info/
+reddit_cache.json

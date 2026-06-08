@@ -13,6 +13,21 @@ from fotmob.constants import LEAGUE_IDS
 from world_cup import WorldCupTask, get_country_flag
 
 
+def clean_team_name(name: str, league_key: str) -> str:
+    """Remove unnecessary suffixes from team names based on league context."""
+    if league_key == "nwsl" and name.endswith(" (W)"):
+        return name[:-4]
+    return name
+
+
+def get_league_key_from_id(league_id: int) -> str | None:
+    """Get league key from league ID."""
+    for key, lid in LEAGUE_IDS.items():
+        if lid == league_id:
+            return key
+    return None
+
+
 def load_config() -> dict:
     """Load configuration from config.json."""
     config_path = Path(__file__).parent / "config.json"
@@ -196,9 +211,9 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
             )
             status_emoji = "🔴" if match.is_live else "✅"
 
-            # Add flag emojis for World Cup matches
-            home_name = match.home_team.name
-            away_name = match.away_team.name
+            # Clean team names and add flag emojis for World Cup matches
+            home_name = clean_team_name(match.home_team.name, league_key)
+            away_name = clean_team_name(match.away_team.name, league_key)
             if league_key == "world_cup":
                 home_flag = get_country_flag(home_name)
                 away_flag = get_country_flag(away_name)
@@ -234,9 +249,9 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
                 except Exception:
                     pass  # Continue without venue/broadcast if fetch fails
 
-            # Build match line with flag emojis for World Cup
-            home_name = match.home_team.name
-            away_name = match.away_team.name
+            # Clean team names and add flag emojis for World Cup
+            home_name = clean_team_name(match.home_team.name, league_key)
+            away_name = clean_team_name(match.away_team.name, league_key)
             if league_key == "world_cup":
                 home_flag = get_country_flag(home_name)
                 away_flag = get_country_flag(away_name)
@@ -269,9 +284,9 @@ async def matches(ctx: commands.Context, *, league: str = "mls"):
         # Show remaining upcoming matches without venue info (6-10)
         if len(upcoming) > 5:
             for match in upcoming[5:10]:
-                # Add flag emojis for World Cup matches
-                home_name = match.home_team.name
-                away_name = match.away_team.name
+                # Clean team names and add flag emojis for World Cup matches
+                home_name = clean_team_name(match.home_team.name, league_key)
+                away_name = clean_team_name(match.away_team.name, league_key)
                 if league_key == "world_cup":
                     home_flag = get_country_flag(home_name)
                     away_flag = get_country_flag(away_name)
@@ -368,7 +383,8 @@ async def standings(ctx: commands.Context, *, league: str = "mls"):
             # Teams (top 10)
             for team in table_data[:10]:
                 pos = team.get("idx", 0)
-                name = team.get("shortName", team.get("name", "Unknown"))[:18]
+                name = team.get("shortName", team.get("name", "Unknown"))
+                name = clean_team_name(name, league_key)[:18]
                 played = team.get("played", 0)
                 wins = team.get("wins", 0)
                 draws = team.get("draws", 0)
@@ -417,8 +433,12 @@ async def match(ctx: commands.Context, match_id: int):
             return
 
         match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
+        league_key = (
+            get_league_key_from_id(match.league_id) if match.league_id else None
+        )
+
+        home_team = clean_team_name(match.home_team.name, league_key or "")
+        away_team = clean_team_name(match.away_team.name, league_key or "")
 
         # Get flags if World Cup match
         home_flag = ""
