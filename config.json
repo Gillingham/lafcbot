@@ -20,6 +20,8 @@
       "enabled": true,
       "channel_name": "world-cup-2026-live",
       "check_interval_seconds": 60,
+      "pre_match_minutes": 15,
+      "fallback_check_hours": 12,
       "notifications": {
         "goals": true,
         "extra_time": true,

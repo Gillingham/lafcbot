@@ -69,6 +69,18 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to load misc cog: {e}")
 
+    try:
+        bot.load_extension("lafcbot.cogs.latepass")
+        print("Loaded latepass cog")
+    except Exception as e:
+        print(f"Failed to load latepass cog: {e}")
+
+    try:
+        bot.load_extension("lafcbot.cogs.pandaping")
+        print("Loaded pandaping cog")
+    except Exception as e:
+        print(f"Failed to load pandaping cog: {e}")
+
     # Load config and start World Cup task if enabled
     config = load_config()
     wc_config = config.get("world_cup", {})

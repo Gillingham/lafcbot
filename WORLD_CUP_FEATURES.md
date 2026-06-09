@@ -46,6 +46,8 @@ Edit `config.json` to enable/disable features:
       "enabled": true,
       "channel_name": "world-cup-2026-live",
       "check_interval_seconds": 60,
+      "pre_match_minutes": 15,
+      "fallback_check_hours": 12,
       "notifications": {
         "goals": true,
         "extra_time": true,
@@ -72,7 +74,9 @@ Edit `config.json` to enable/disable features:
 
 - **`live_monitoring.enabled`**: Enable/disable live match monitoring
 - **`live_monitoring.channel_name`**: Channel for live notifications
-- **`live_monitoring.check_interval_seconds`**: How often to check for updates (default: 60)
+- **`live_monitoring.check_interval_seconds`**: How often to check for updates during matches (default: 60)
+- **`live_monitoring.pre_match_minutes`**: Start monitoring N minutes before kickoff (default: 15)
+- **`live_monitoring.fallback_check_hours`**: How long to sleep if no matches found (default: 12)
 - **`notifications.goals`**: Enable goal notifications
 - **`notifications.extra_time`**: Enable extra time notifications
 - **`notifications.penalties`**: Enable penalty shootout notifications
@@ -85,9 +89,29 @@ Edit `config.json` to enable/disable features:
 
 ## How It Works
 
+### Smart Scheduling
+
+The live monitoring system uses intelligent scheduling to minimize API calls while ensuring timely notifications:
+
+**Two-tier architecture:**
+1. **Scheduler** (checks every 5 minutes): Decides what to do next based on match schedule
+2. **Game Monitor** (polls every 60 seconds): Only active when matches are live
+
+**Scheduling logic:**
+- When matches are **live**: Activates game monitor immediately
+- When matches are **upcoming**: Sleeps until 15 minutes before kickoff (configurable)
+- When **no matches scheduled**: Sleeps for 12 hours then checks again (configurable)
+- When matches **finish**: Game monitor stops itself, scheduler takes over
+
+**Benefits:**
+- ~95% fewer API calls on non-match days (2-4 calls vs 1,440)
+- Timezone-aware: works globally with matches at any time
+- Match-driven: all timing based on actual kickoff times, not arbitrary schedules
+- Graceful fallback: handles tournament gaps and API issues
+
 ### Goal Detection
 
-The bot polls FotMob's API every 60 seconds (configurable) when matches are live. It:
+When the game monitor is active (matches are live), it polls FotMob's API every 60 seconds (configurable). It:
 1. Fetches detailed match information including all events
 2. Compares event IDs to detect new goals
 3. Sends Discord notifications immediately

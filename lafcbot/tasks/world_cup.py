@@ -128,8 +128,18 @@ class WorldCupTask:
         self.fotmob_client = fotmob_client
         self.config = config
         self.daily_task = None
-        self.live_task = None
+        self.scheduler_task = None
+        self.game_monitor_task = None
         self.reddit_client = reddit_client.RedditGoalFetcher()
+
+        # Load timezone
+        tz_name = self.config.get("timezone", "America/Los_Angeles")
+        self.timezone = ZoneInfo(tz_name)
+
+        # State tracking for smart scheduling
+        self.next_check_time = None
+        self.monitoring_active = False
+        self.live_match_ids = set()
 
         # State tracking for monitored matches
         # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}
@@ -147,13 +157,13 @@ class WorldCupTask:
             self.daily_task.start()
             print("World Cup daily task started")
 
-        # Start live monitoring task if enabled
+        # Start smart scheduler for live monitoring if enabled
         live_config = self.config.get("live_monitoring", {})
         if live_config.get("enabled", False):
-            if self.live_task is None:
-                self.live_task = self._create_live_monitoring_task()
-                self.live_task.start()
-                print("World Cup live monitoring started")
+            if self.scheduler_task is None:
+                self.scheduler_task = self._create_scheduler_task()
+                self.scheduler_task.start()
+                print("World Cup smart scheduler started")
 
     def stop(self):
         """Stop the World Cup tasks."""
@@ -161,9 +171,13 @@ class WorldCupTask:
             self.daily_task.cancel()
             print("World Cup daily task stopped")
 
-        if self.live_task and self.live_task.is_running():
-            self.live_task.cancel()
-            print("World Cup live monitoring stopped")
+        if self.scheduler_task and self.scheduler_task.is_running():
+            self.scheduler_task.cancel()
+            print("World Cup scheduler stopped")
+
+        if self.game_monitor_task and self.game_monitor_task.is_running():
+            self.game_monitor_task.cancel()
+            print("World Cup game monitor stopped")
 
         # Close Reddit client
         asyncio.create_task(self.reddit_client.close())
@@ -356,13 +370,134 @@ class WorldCupTask:
 
         return daily_world_cup_matches
 
-    def _create_live_monitoring_task(self):
-        """Create and return the live monitoring task loop."""
+    def _create_scheduler_task(self):
+        """Create and return the smart scheduler task loop."""
+
+        @tasks.loop(minutes=5)
+        async def scheduler():
+            """Smart scheduler that decides when to check for matches."""
+            try:
+                now = datetime.now(self.timezone)
+
+                # If monitoring is active, don't interfere
+                if self.monitoring_active:
+                    return
+
+                # If we have a scheduled next check time, wait for it
+                if self.next_check_time:
+                    if now < self.next_check_time:
+                        # Still waiting for scheduled check time
+                        return
+                    else:
+                        # Time to check the schedule!
+                        logger.info(f"Scheduled check time reached at {now}")
+                        self.next_check_time = None
+
+                # Check for matches and decide next action
+                await self._check_schedule()
+
+            except Exception as e:
+                logger.error(f"Error in scheduler: {e}", exc_info=True)
+
+        @scheduler.before_loop
+        async def before_scheduler():
+            """Wait until bot is ready."""
+            await self.bot.wait_until_ready()
+            logger.info("World Cup smart scheduler starting...")
+
+        return scheduler
+
+    async def _check_schedule(self):
+        """Check match schedule and decide next action."""
+        try:
+            # Get all World Cup matches
+            all_matches = await self.fotmob_client.get_league_matches(77)
+
+            if not all_matches:
+                logger.info("No World Cup matches found in schedule")
+                # Fallback: check again in N hours
+                fallback_hours = self.config.get("live_monitoring", {}).get(
+                    "fallback_check_hours", 12
+                )
+                self.next_check_time = datetime.now(self.timezone) + timedelta(
+                    hours=fallback_hours
+                )
+                logger.info(f"Will check again at {self.next_check_time}")
+                return
+
+            # Separate matches by status
+            live_matches = [m for m in all_matches if m.is_live]
+            upcoming_matches = [
+                m
+                for m in all_matches
+                if not m.is_live and not m.is_finished and m.start_time
+            ]
+
+            if live_matches:
+                # Matches are live right now! Start monitoring
+                logger.info(f"Found {len(live_matches)} live World Cup match(es)")
+                self.live_match_ids = {m.id for m in live_matches}
+
+                if (
+                    not self.game_monitor_task
+                    or not self.game_monitor_task.is_running()
+                ):
+                    self.monitoring_active = True
+                    if self.game_monitor_task is None:
+                        self.game_monitor_task = self._create_game_monitor_task()
+                    self.game_monitor_task.start()
+                    logger.info("Started game monitor for live matches")
+
+            elif upcoming_matches:
+                # Schedule check before next match
+                next_match = min(upcoming_matches, key=lambda m: m.start_time)
+                pre_match_min = self.config.get("live_monitoring", {}).get(
+                    "pre_match_minutes", 15
+                )
+                check_time = next_match.start_time.astimezone(
+                    self.timezone
+                ) - timedelta(minutes=pre_match_min)
+
+                self.next_check_time = check_time
+                match_time_str = next_match.start_time.astimezone(
+                    self.timezone
+                ).strftime("%a %b %d at %I:%M %p %Z")
+                check_time_str = check_time.strftime("%a %b %d at %I:%M %p %Z")
+
+                logger.info(
+                    f"Next match: {next_match.home_team.name} vs {next_match.away_team.name} "
+                    f"at {match_time_str}. Will start monitoring at {check_time_str}"
+                )
+
+            else:
+                # No matches with schedule info
+                fallback_hours = self.config.get("live_monitoring", {}).get(
+                    "fallback_check_hours", 12
+                )
+                self.next_check_time = datetime.now(self.timezone) + timedelta(
+                    hours=fallback_hours
+                )
+                logger.info(
+                    f"No upcoming World Cup matches found, will check again at {self.next_check_time}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error checking schedule: {e}", exc_info=True)
+            # Fallback on error
+            fallback_hours = self.config.get("live_monitoring", {}).get(
+                "fallback_check_hours", 12
+            )
+            self.next_check_time = datetime.now(self.timezone) + timedelta(
+                hours=fallback_hours
+            )
+
+    def _create_game_monitor_task(self):
+        """Create and return the game monitor task loop."""
         live_config = self.config.get("live_monitoring", {})
         check_interval = live_config.get("check_interval_seconds", 60)
 
         @tasks.loop(seconds=check_interval)
-        async def live_world_cup_monitoring():
+        async def game_monitor():
             """Monitor live World Cup matches for goals and events."""
             if self.fotmob_client is None:
                 return
@@ -372,8 +507,11 @@ class WorldCupTask:
                 live_matches = await self.fotmob_client.get_live_world_cup_matches()
 
                 if not live_matches:
-                    # No live matches, clean up any finished matches
-                    await self._check_finished_matches()
+                    # No more live matches, stop monitoring
+                    logger.info("No more live matches, stopping game monitor")
+                    self.monitoring_active = False
+                    self.live_match_ids.clear()
+                    game_monitor.cancel()
                     return
 
                 # Find live monitoring channel
@@ -396,16 +534,16 @@ class WorldCupTask:
                 await self._check_finished_matches()
 
             except Exception as e:
-                logger.error(f"Error in live monitoring: {e}")
+                logger.error(f"Error in game monitor: {e}")
                 logger.error(traceback.format_exc())
 
-        @live_world_cup_monitoring.before_loop
-        async def before_live_monitoring():
+        @game_monitor.before_loop
+        async def before_game_monitor():
             """Wait until bot is ready."""
             await self.bot.wait_until_ready()
-            logger.info("World Cup live monitoring task starting...")
+            logger.info("World Cup game monitor starting...")
 
-        return live_world_cup_monitoring
+        return game_monitor
 
     async def _monitor_match(self, match, channel):
         """
