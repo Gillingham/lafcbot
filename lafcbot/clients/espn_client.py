@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 import aiohttp
@@ -18,6 +19,8 @@ class Game:
     home_team: str
     home_score: str
     status: str
+    is_scheduled: bool
+    scheduled_time: Optional[datetime] = None
 
 
 class ESPNClient:
@@ -136,6 +139,24 @@ class ESPNClient:
 
             # Extract and format status
             status_obj = competition.get("status", {})
+            status_type = status_obj.get("type", {})
+            state = status_type.get("state", "")
+
+            # Check if game is scheduled (not in progress or finished)
+            is_scheduled = state not in ("in", "post")
+            scheduled_time = None
+
+            if is_scheduled:
+                # Extract scheduled datetime from status
+                date_str = competition.get("date")
+                if date_str:
+                    try:
+                        scheduled_time = datetime.fromisoformat(
+                            date_str.replace("Z", "+00:00")
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to parse scheduled time: {e}")
+
             status = self._format_status(status_obj)
 
             return Game(
@@ -144,6 +165,8 @@ class ESPNClient:
                 home_team=home_team,
                 home_score=home_score,
                 status=status,
+                is_scheduled=is_scheduled,
+                scheduled_time=scheduled_time,
             )
 
         except Exception as e:

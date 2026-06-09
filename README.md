@@ -248,8 +248,8 @@ Shows today's scores for a sports league in a single concise line.
 !scores              # Show available leagues
 !scores mlb          # Major League Baseball: SEA 6 @ BAL 3 Final | NYY 7 @ CLE 5 Bot 10th | ...
 !scores nba          # National Basketball Association: SA 76 @ NY 76 5:37 - 3rd
-!scores nhl          # National Hockey League: VGK @ CAR 6/9 - 8:00 PM EDT
-!scores nfl          # National Football League: SEA @ NE 9/9 - 8:20 PM EDT
+!scores nhl          # National Hockey League: VGK @ CAR (Mon 6/9 8:00 PM)
+!scores nfl          # National Football League: SEA @ NE (Sun 9/9 8:20 PM)
 !scores f1           # Formula 1: [race results]
 ```
 
@@ -258,7 +258,7 @@ Shows today's scores for a sports league in a single concise line.
 **Output includes:**
 - Live games with current score and clock time
 - Final games with final scores
-- Scheduled games with date and time
+- Scheduled games with localized start time
 - All games on a single line separated by ` | `
 
 ### LatePass Commands

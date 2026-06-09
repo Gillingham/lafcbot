@@ -126,7 +126,14 @@ class MiscCog(commands.Cog):
             # Format games as single line
             game_strings = []
             for game in games:
-                game_str = f"{game.away_team} {game.away_score} @ {game.home_team} {game.home_score} {game.status}"
+                if game.is_scheduled and game.scheduled_time:
+                    # For scheduled games, show time without scores
+                    local_time = game.scheduled_time.astimezone(self.timezone)
+                    time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")
+                    game_str = f"{game.away_team} @ {game.home_team} ({time_str})"
+                else:
+                    # For in-progress or final games, show scores and status
+                    game_str = f"{game.away_team} {game.away_score} @ {game.home_team} {game.home_score} {game.status}"
                 game_strings.append(game_str)
 
             output = f"{league_name}: {' | '.join(game_strings)}"
