@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import discord
 from discord.ext import commands
 
+from lafcbot.clients.espn_client import ESPNClient
 from lafcbot.clients.open_meteo_client import OpenMeteoClient
 from lafcbot.db import (
     get_latepass_leaderboard,
@@ -32,6 +33,7 @@ class MiscCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.weather_client = OpenMeteoClient()
+        self.espn_client = ESPNClient()
         # URL pattern to detect URLs in messages
         self.url_pattern = re.compile(r"https?://[^\s<>\"]+|www\.[^\s<>\"]+")
         # Load timezone from config
@@ -74,6 +76,67 @@ class MiscCog(commands.Cog):
         except Exception as e:
             print(f"Error parsing URL domain {url}: {e}")
             return False
+
+    @commands.command()
+    async def scores(self, ctx: commands.Context, league: str | None = None):
+        """Show today's scores for a sports league in a single concise line.
+
+        Usage: !scores <league>
+        Available leagues: nba, mlb, nhl, nfl, f1
+
+        Examples:
+          !scores              - Show available leagues
+          !scores mlb          - Major League Baseball scores
+          !scores nba          - NBA scores
+          !scores nhl          - NHL scores
+          !scores nfl          - NFL scores
+          !scores f1           - Formula 1 results
+        """
+        available = "nba, mlb, nhl, nfl, f1"
+
+        # No league specified - show available leagues
+        if league is None:
+            await ctx.message.reply(f"Available leagues: {available}")
+            return
+
+        # Normalize league to lowercase
+        league = league.lower()
+
+        # Check if league is valid
+        if league not in ESPNClient.SPORT_PATHS:
+            await ctx.message.reply(
+                f"Unknown league '{league}'. Available leagues: {available}"
+            )
+            return
+
+        # Fetch scoreboard
+        try:
+            league_name, games = await self.espn_client.get_scoreboard(league)
+
+            if not league_name:
+                await ctx.message.reply(
+                    f"Failed to fetch scores for {league.upper()}. Please try again later."
+                )
+                return
+
+            if not games:
+                await ctx.message.reply(f"No games found for {league_name} today.")
+                return
+
+            # Format games as single line
+            game_strings = []
+            for game in games:
+                game_str = f"{game.away_team} {game.away_score} @ {game.home_team} {game.home_score} {game.status}"
+                game_strings.append(game_str)
+
+            output = f"{league_name}: {' | '.join(game_strings)}"
+            await ctx.message.reply(output)
+
+        except Exception as e:
+            import traceback
+
+            await ctx.message.reply(f"Error fetching scores: {e}")
+            print(traceback.format_exc())
 
     @commands.command()
     async def wut(self, ctx: commands.Context):

@@ -18,6 +18,7 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 
 ### Utilities
 - 🌦️ **Weather** - Current weather conditions with AQI data
+- 🏀 **Sports Scores** - Live scores for NBA, MLB, NHL, NFL, F1
 - 🔗 **LatePass** - URL repost tracking with scoring system
 - 🎲 **Dice rolling** - Standard RPG dice notation
 - 🎱 **Magic 8-ball** - Answer your burning questions
@@ -237,6 +238,29 @@ Seattle, Washington, United States: 58F overcast; feels 56F; humidity 81%; wind 
 
 The bot remembers your last location for quick checks.
 
+### Scores Commands
+
+#### `!scores <league>`
+Shows today's scores for a sports league in a single concise line.
+
+**Examples:**
+```
+!scores              # Show available leagues
+!scores mlb          # Major League Baseball: SEA 6 @ BAL 3 Final | NYY 7 @ CLE 5 Bot 10th | ...
+!scores nba          # National Basketball Association: SA 76 @ NY 76 5:37 - 3rd
+!scores nhl          # National Hockey League: VGK @ CAR 6/9 - 8:00 PM EDT
+!scores nfl          # National Football League: SEA @ NE 9/9 - 8:20 PM EDT
+!scores f1           # Formula 1: [race results]
+```
+
+**Supported leagues:** nba, mlb, nhl, nfl, f1
+
+**Output includes:**
+- Live games with current score and clock time
+- Final games with final scores
+- Scheduled games with date and time
+- All games on a single line separated by ` | `
+
 ### LatePass Commands
 
 LatePass automatically tracks URL reposts and maintains a scoring system. See [LATEPASS.md](LATEPASS.md) for complete documentation.
@@ -309,7 +333,8 @@ The bot includes a complete async Python library for scraping FotMob:
 
 ### Data Sources
 
-- **Match Data:** FotMob.com (via HTML scraping and API)
+- **Soccer Match Data:** FotMob.com (via HTML scraping and API)
+- **Sports Scores:** ESPN public scoreboard API (NBA, MLB, NHL, NFL, F1)
 - **Venue Information:** Extracted from match details pages
 - **TV Providers:** Extracted from match page HTML (US only)
 - **Goal Replay Clips:** Reddit r/soccer (via public JSON API)
