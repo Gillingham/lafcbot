@@ -207,6 +207,61 @@ class OpenMeteoClient:
             logger.error(f"Unexpected error fetching weather: {e}")
             return None
 
+    # US state abbreviations map
+    US_STATE_ABBR = {
+        "AL": "Alabama",
+        "AK": "Alaska",
+        "AZ": "Arizona",
+        "AR": "Arkansas",
+        "CA": "California",
+        "CO": "Colorado",
+        "CT": "Connecticut",
+        "DE": "Delaware",
+        "FL": "Florida",
+        "GA": "Georgia",
+        "HI": "Hawaii",
+        "ID": "Idaho",
+        "IL": "Illinois",
+        "IN": "Indiana",
+        "IA": "Iowa",
+        "KS": "Kansas",
+        "KY": "Kentucky",
+        "LA": "Louisiana",
+        "ME": "Maine",
+        "MD": "Maryland",
+        "MA": "Massachusetts",
+        "MI": "Michigan",
+        "MN": "Minnesota",
+        "MS": "Mississippi",
+        "MO": "Missouri",
+        "MT": "Montana",
+        "NE": "Nebraska",
+        "NV": "Nevada",
+        "NH": "New Hampshire",
+        "NJ": "New Jersey",
+        "NM": "New Mexico",
+        "NY": "New York",
+        "NC": "North Carolina",
+        "ND": "North Dakota",
+        "OH": "Ohio",
+        "OK": "Oklahoma",
+        "OR": "Oregon",
+        "PA": "Pennsylvania",
+        "RI": "Rhode Island",
+        "SC": "South Carolina",
+        "SD": "South Dakota",
+        "TN": "Tennessee",
+        "TX": "Texas",
+        "UT": "Utah",
+        "VT": "Vermont",
+        "VA": "Virginia",
+        "WA": "Washington",
+        "WV": "West Virginia",
+        "WI": "Wisconsin",
+        "WY": "Wyoming",
+        "DC": "District of Columbia",
+    }
+
     async def _geocode_location(
         self, location: str
     ) -> Optional[tuple[float, float, str]]:
@@ -214,17 +269,41 @@ class OpenMeteoClient:
         Convert a location string to coordinates.
 
         Args:
-            location: City name, ZIP code, or other location string
+            location: City name, ZIP code, or "City, State" format
 
         Returns:
             Tuple of (latitude, longitude, display_name) or None if failed
         """
-        # Try the original query first
+        # Check if location has a state specified (e.g., "Pasadena, CA")
+        state_filter = None
+        if "," in location:
+            parts = location.split(",")
+            if len(parts) == 2:
+                city_name = parts[0].strip()
+                state_abbr = parts[1].strip().upper()
+
+                # Convert abbreviation to full state name
+                if state_abbr in self.US_STATE_ABBR:
+                    state_filter = self.US_STATE_ABBR[state_abbr]
+                    # Try with full query first (might help the API)
+                    result = await self._geocode_query(
+                        location, state_filter=state_filter
+                    )
+                    if result:
+                        return result
+                    # Then try just the city with state filter
+                    result = await self._geocode_query(
+                        city_name, state_filter=state_filter
+                    )
+                    if result:
+                        return result
+
+        # Try the original query first (for ZIP codes or simple city names)
         result = await self._geocode_query(location)
         if result:
             return result
 
-        # If it fails and contains a comma (like "City, ST"), try just the city name
+        # If it fails and contains a comma, try just the city name
         if "," in location:
             city_only = location.split(",")[0].strip()
             result = await self._geocode_query(city_only)
@@ -233,11 +312,18 @@ class OpenMeteoClient:
 
         return None
 
-    async def _geocode_query(self, query: str) -> Optional[tuple[float, float, str]]:
-        """Execute a single geocoding query."""
+    async def _geocode_query(
+        self, query: str, state_filter: str | None = None
+    ) -> Optional[tuple[float, float, str]]:
+        """Execute a single geocoding query.
+
+        Args:
+            query: Location query string
+            state_filter: Optional state name to filter results
+        """
         params = {
             "name": query,
-            "count": 1,
+            "count": 10,  # Get multiple results to find best match
             "language": "en",
             "format": "json",
         }
@@ -249,27 +335,42 @@ class OpenMeteoClient:
                 if response.status == 200:
                     data = await response.json()
                     if data.get("results") and len(data["results"]) > 0:
-                        result = data["results"][0]
-                        lat = result.get("latitude")
-                        lon = result.get("longitude")
-                        name = result.get("name")
-                        country = result.get("country")
-                        admin1 = result.get("admin1")  # State/province
+                        # If state filter provided, prioritize results from that state
+                        if state_filter:
+                            for result in data["results"]:
+                                if result.get("admin1") == state_filter:
+                                    result = self._build_result(result)
+                                    if result:
+                                        return result
 
-                        if lat is not None and lon is not None:
-                            # Build display name
-                            display_parts = [name]
-                            if admin1:
-                                display_parts.append(admin1)
-                            if country:
-                                display_parts.append(country)
-                            display_name = ", ".join(display_parts)
-
-                            return (lat, lon, display_name)
+                        # Fall back to first result if no state match
+                        result = self._build_result(data["results"][0])
+                        if result:
+                            return result
                 return None
         except Exception as e:
             logger.error(f"Geocoding failed: {e}")
             return None
+
+    def _build_result(self, result: dict) -> Optional[tuple[float, float, str]]:
+        """Build result tuple from geocoding result dict."""
+        lat = result.get("latitude")
+        lon = result.get("longitude")
+        name = result.get("name")
+        country = result.get("country")
+        admin1 = result.get("admin1")  # State/province
+
+        if lat is not None and lon is not None:
+            # Build display name
+            display_parts = [name]
+            if admin1:
+                display_parts.append(admin1)
+            if country:
+                display_parts.append(country)
+            display_name = ", ".join(display_parts)
+
+            return (lat, lon, display_name)
+        return None
 
     def _parse_weather_data(
         self, data: dict, display_name: str, aqi: Optional[int] = None
