@@ -1,5 +1,12 @@
 {
   "timezone": "America/Los_Angeles",
+  "latepass": {
+    "ignored_domains": [
+      "tenor.com",
+      "giphy.com",
+      "gfycat.com"
+    ]
+  },
   "channel_leagues": {
     "angel-city-fc-news": "nwsl",
     "world-cup-2026": "world_cup",

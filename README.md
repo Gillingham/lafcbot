@@ -52,6 +52,14 @@ The bot uses `config.json` for settings. Create it in the project root:
 ```json
 {
   "timezone": "America/Los_Angeles",
+  "latepass": {
+    "ignored_domains": [
+      "tenor.com",
+      "giphy.com",
+      "gfycat.com",
+      "imgur.com"
+    ]
+  },
   "channel_leagues": {
     "mls": "mls",
     "nwsl": "nwsl",
@@ -102,6 +110,13 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 - `timezone`: IANA timezone name (e.g., "America/Los_Angeles", "America/New_York")
   - Used for time displays across the bot (matches, weather, latepass timestamps)
   - Defaults to "America/Los_Angeles" if not specified
+
+### LatePass Settings
+
+- `latepass.ignored_domains`: Array of domain names to ignore for URL tracking
+  - Useful for excluding GIF/image hosts that are frequently "reposted" but are just media links
+  - Supports subdomain matching (e.g., "tenor.com" matches "media.tenor.com")
+  - Default domains to consider: `tenor.com`, `giphy.com`, `gfycat.com`, `imgur.com`
 
 ### World Cup Settings
 

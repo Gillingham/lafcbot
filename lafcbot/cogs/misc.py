@@ -44,10 +44,36 @@ class MiscCog(commands.Cog):
             with open(config_path) as f:
                 config = json.load(f)
                 tz_name = config.get("timezone", "America/Los_Angeles")
+
+                # Load latepass ignored domains
+                latepass_config = config.get("latepass", {})
+                self.ignored_domains = set(latepass_config.get("ignored_domains", []))
+
                 return ZoneInfo(tz_name)
         except Exception as e:
             print(f"Error loading timezone from config: {e}, using default")
+            self.ignored_domains = set()
             return ZoneInfo("America/Los_Angeles")
+
+    def _is_domain_ignored(self, url: str) -> bool:
+        """Check if a URL's domain is in the ignore list."""
+        try:
+            # Extract domain from URL
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url if url.startswith("http") else f"http://{url}")
+            domain = parsed.netloc.lower()
+
+            # Check if domain or any parent domain is in ignore list
+            # e.g., "media.tenor.com" matches "tenor.com"
+            for ignored_domain in self.ignored_domains:
+                if domain == ignored_domain or domain.endswith(f".{ignored_domain}"):
+                    return True
+
+            return False
+        except Exception as e:
+            print(f"Error parsing URL domain {url}: {e}")
+            return False
 
     @commands.command()
     async def wut(self, ctx: commands.Context):
@@ -410,6 +436,10 @@ class MiscCog(commands.Cog):
         for url in urls:
             # Normalize URL (strip trailing punctuation that might not be part of URL)
             url = url.rstrip(".,;!?)")
+
+            # Check if domain is in ignore list
+            if self._is_domain_ignored(url):
+                continue
 
             # Check if URL has been posted before in this guild
             previous_post = await get_posted_url(url, guild_id)

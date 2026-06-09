@@ -194,6 +194,39 @@ All tracking is per-guild (per Discord server):
 - Repost counts are server-specific
 - Same URL can have different stats in different servers
 
+## Ignored Domains
+
+You can configure domains to ignore for latepass tracking in `config.json`:
+
+```json
+{
+  "latepass": {
+    "ignored_domains": [
+      "tenor.com",
+      "giphy.com",
+      "gfycat.com",
+      "imgur.com"
+    ]
+  }
+}
+```
+
+**Why ignore domains?**
+- GIF/image hosting sites (tenor, giphy) are frequently "reposted" but they're just media links
+- The same GIF might be sent by multiple people reacting to something
+- These aren't really content reposts, just reactions
+
+**How it works:**
+- URLs from ignored domains are completely skipped by latepass
+- No tracking, no reactions, no score changes
+- Supports subdomain matching (e.g., `tenor.com` also matches `media.tenor.com`)
+
+**Default suggestions:**
+- `tenor.com` - GIF hosting
+- `giphy.com` - GIF hosting
+- `gfycat.com` - GIF hosting
+- `imgur.com` - Image hosting (optional - you may want to track imgur links)
+
 ## Custom Emoji Setup
 
 For best experience, add a custom emoji named `:LatePass:` to your Discord server. The bot will automatically use it. If not found, it falls back to 🕐 (clock emoji).
