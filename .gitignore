@@ -6,3 +6,4 @@ __pycache__/
 golazo
 lafcbot.egg-info/
 reddit_cache.json
+lafcbot.db

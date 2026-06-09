@@ -1,19 +1,26 @@
 # lafcbot
 
-Discord bot for soccer match information, powered by FotMob data.
+Discord bot for soccer match information and fun utilities, powered by FotMob data.
 
 ## Features
 
+### Soccer
 - 🏟️ Match schedules with venue information
 - 📺 US TV provider information
 - 🏆 League standings
 - 🌍 Support for major leagues (MLS, NWSL, World Cup, Premier League, Champions League)
-- ⏰ Times displayed in Pacific Time (PT)
+- ⏰ Times displayed in configurable timezone (default: Pacific Time)
 - 🚩 Country flags for World Cup matches
 - ⚽ **Real-time goal notifications** for World Cup matches
 - 🎥 **Automatic Reddit replay clips** from r/soccer
 - 🏁 **Post-match summaries** with highlights
 - ⏱️ **Extra time and penalty shootout alerts**
+
+### Utilities
+- 🌦️ **Weather** - Current weather conditions with AQI data
+- 🔗 **LatePass** - URL repost tracking with scoring system
+- 🎲 **Dice rolling** - Standard RPG dice notation
+- 🎱 **Magic 8-ball** - Answer your burning questions
 
 ## Prerequisites
 
@@ -44,6 +51,7 @@ The bot uses `config.json` for settings. Create it in the project root:
 
 ```json
 {
+  "timezone": "America/Los_Angeles",
   "channel_leagues": {
     "mls": "mls",
     "nwsl": "nwsl",
@@ -55,7 +63,6 @@ The bot uses `config.json` for settings. Create it in the project root:
     "enabled": true,
     "channel_name": "world-cup-2026",
     "daily_time_hour": 8,
-    "timezone": "America/Los_Angeles",
     "live_monitoring": {
       "enabled": true,
       "channel_name": "world-cup-2026-live",
@@ -90,13 +97,18 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 
 **Example:** In the `#premier-league` channel, typing `!matches` will show Premier League matches. In unmapped channels, it defaults to MLS.
 
-**World Cup Settings:**
+### Global Settings
+
+- `timezone`: IANA timezone name (e.g., "America/Los_Angeles", "America/New_York")
+  - Used for time displays across the bot (matches, weather, latepass timestamps)
+  - Defaults to "America/Los_Angeles" if not specified
+
+### World Cup Settings
 
 **Basic Settings:**
 - `enabled`: Toggle all World Cup features on/off
 - `channel_name`: Discord channel for daily spoiler-free match schedules
 - `daily_time_hour`: Hour (0-23) for daily schedule posts
-- `timezone`: IANA timezone name (e.g., "America/Los_Angeles", "America/New_York")
 
 **Live Monitoring:**
 - `live_monitoring.enabled`: Enable real-time goal notifications and live match monitoring
@@ -183,11 +195,76 @@ Shows detailed match summary with goals, assists, and highlights.
 - 🏟️ Venue information
 - Penalty shootout results (if applicable)
 
+### Weather Commands
+
+#### `!weather [location]`
+Shows current weather conditions with detailed information.
+
+**Examples:**
+```
+!weather                # Uses your saved location
+!weather Seattle        # Weather for Seattle
+!weather 90210          # Weather by ZIP code
+```
+
+**Output includes:**
+- Current temperature (F/C) and conditions
+- Feels like temperature
+- Humidity percentage
+- Wind speed and direction
+- Air Quality Index (AQI) with category
+- Today's high/low and precipitation chance
+
+**Sample:**
+```
+Seattle, Washington, United States: 58F overcast; feels 56F; humidity 81%; wind ESE 5 mph; AQI 48 good; Today 59F/49F, 91% rain
+```
+
+The bot remembers your last location for quick checks.
+
+### LatePass Commands
+
+LatePass automatically tracks URL reposts and maintains a scoring system. See [LATEPASS.md](LATEPASS.md) for complete documentation.
+
+#### `!latepass [user]`
+Shows your latepass score or another user's score.
+
+**Examples:**
+```
+!latepass               # Your score
+!latepass @Alice        # Alice's score
+```
+
+#### `!latepass leaderboard [limit]`
+Shows the server leaderboard (top 10 by default, range 5-50).
+
+#### `!latepass stats`
+Shows server-wide statistics (total URLs, reposts, most reposted URL).
+
+#### `!latepass top [limit]`
+Shows most reposted URLs (top 10 by default, range 5-25).
+
+#### `!latepass viral [min_reposts]`
+Shows viral URLs with high repost counts (10+ by default, range 5-100).
+
+**Scoring System:**
+- Original poster: +1 point per repost
+- Reposter: -1 point per repost
+- Positive scores = sharing fresh content
+- Negative scores = reposting others' content
+
+**Auto-tracking:**
+When someone reposts a URL, the bot automatically:
+- Adds a :LatePass: emoji reaction
+- Replies with original poster, time ago, scores, ranks, and total reposts
+- Updates both users' scores
+
 ### Other Commands
 
 - `!ping` - Check bot latency
 - `!wut` - Just... wut
 - `!dice <notation>` - Roll dice (e.g., `!dice 3d6+2`)
+- `!8ball <question>` - Ask the magic 8-ball
 - `!servers` - (Owner only) List servers bot is in
 
 ## Supported Leagues
@@ -222,10 +299,26 @@ The bot includes a complete async Python library for scraping FotMob:
 - **TV Providers:** Extracted from match page HTML (US only)
 - **Goal Replay Clips:** Reddit r/soccer (via public JSON API)
 - **Highlights:** FotMob official highlights URLs
+- **Weather Data:** Open-Meteo API (free, no API key required)
+- **Air Quality:** Open-Meteo Air Quality API
+
+### Database
+
+The bot uses SQLite for persistent storage:
+
+**Tables:**
+- `user` - User preferences (weather locations)
+- `posted_urls` - First post tracking for each URL per guild
+- `latepass_score` - User scores and rankings per guild
+
+Database is automatically created at `lafcbot.db` on first run.
 
 ### Time Zones
 
-All times displayed in **Pacific Time (PT)**, automatically handling PST/PDT transitions. "Today" filtering uses Los Angeles timezone.
+Times are displayed in the configured timezone (from `config.json`), defaulting to **Pacific Time (PT)**. Automatically handles PST/PDT transitions. Used for:
+- Match times and "today" filtering
+- Weather latepass timestamps
+- LatePass relative time displays
 
 ## Project Structure
 
@@ -234,10 +327,11 @@ lafcbot/
 ├── lafcbot/                   # Main package
 │   ├── __init__.py            # Package exports
 │   ├── bot.py                 # Discord bot setup and core commands
+│   ├── db.py                  # Database operations (SQLite)
 │   ├── cogs/                  # Discord command cogs
 │   │   ├── __init__.py
 │   │   ├── soccer.py          # Soccer commands (matches, standings, match)
-│   │   └── misc.py            # Fun commands (wut, dice, 8ball)
+│   │   └── misc.py            # Utility commands (weather, latepass, dice, 8ball)
 │   ├── tasks/                 # Background tasks
 │   │   ├── __init__.py
 │   │   └── world_cup.py       # World Cup daily schedule + live monitoring
@@ -249,9 +343,12 @@ lafcbot/
 │       │   ├── models.py      # Data models (Match, MatchEvent, Highlight, etc.)
 │       │   ├── parser.py      # HTML/JSON extraction
 │       │   └── __init__.py    # Public API
-│       └── reddit_client.py   # Reddit r/soccer clip fetcher with caching
+│       ├── reddit_client.py   # Reddit r/soccer clip fetcher with caching
+│       └── open_meteo_client.py  # Open-Meteo weather API client
 ├── run.py                     # Entry point
 ├── config.json                # Bot configuration (user-created)
+├── lafcbot.db                 # SQLite database (auto-created)
+├── LATEPASS.md                # LatePass system documentation
 ├── WORLD_CUP_FEATURES.md      # Detailed World Cup features documentation
 ├── .pre-commit-config.yaml    # Pre-commit hook configuration
 ├── ruff.toml                  # Ruff linting rules
@@ -262,9 +359,10 @@ lafcbot/
 ## Dependencies
 
 - `py-cord>=2.0` - Discord bot framework
-- `aiohttp>=3.9.0` - Async HTTP client (for FotMob and Reddit APIs)
+- `aiohttp>=3.9.0` - Async HTTP client (for FotMob, Reddit, and weather APIs)
 - `beautifulsoup4>=4.12.0` - HTML parsing
 - `lxml>=5.0.0` - Fast XML/HTML processing
+- `aiosqlite>=0.20.0` - Async SQLite database (for user preferences and latepass tracking)
 
 ## Development
 

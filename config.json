@@ -1,4 +1,5 @@
 {
+  "timezone": "America/Los_Angeles",
   "channel_leagues": {
     "angel-city-fc-news": "nwsl",
     "world-cup-2026": "world_cup",
@@ -8,7 +9,6 @@
     "enabled": true,
     "channel_name": "world-cup-2026",
     "daily_time_hour": 8,
-    "timezone": "America/Los_Angeles",
     "live_monitoring": {
       "enabled": true,
       "channel_name": "world-cup-2026-live",

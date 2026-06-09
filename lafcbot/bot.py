@@ -48,6 +48,14 @@ async def on_ready():
         print(f"- {g.name} (ID: {g.id}) — {g.member_count} members")
     print("------")
 
+    # Initialize database
+    try:
+        from lafcbot.db import init_db
+
+        await init_db()
+    except Exception as e:
+        print(f"Failed to initialize database: {e}")
+
     # Load cogs
     try:
         bot.load_extension("lafcbot.cogs.soccer")
@@ -64,6 +72,10 @@ async def on_ready():
     # Load config and start World Cup task if enabled
     config = load_config()
     wc_config = config.get("world_cup", {})
+
+    # Add root-level timezone to wc_config if not already present
+    if "timezone" not in wc_config and "timezone" in config:
+        wc_config["timezone"] = config["timezone"]
 
     if wc_config.get("enabled", False):
         from lafcbot.tasks.world_cup import WorldCupTask
@@ -108,6 +120,10 @@ async def shutdown():
     soccer_cog = bot.get_cog("SoccerCog")
     if soccer_cog and soccer_cog.fotmob_client:
         await soccer_cog.fotmob_client.close()
+
+    misc_cog = bot.get_cog("MiscCog")
+    if misc_cog and misc_cog.weather_client:
+        await misc_cog.weather_client.close()
 
 
 def main():
