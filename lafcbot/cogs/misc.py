@@ -76,34 +76,6 @@ class MiscCog(commands.Cog):
             return False
 
     @commands.command()
-    async def help(self, ctx: commands.Context):
-        """Show available bot commands."""
-        help_text = """**Available Commands**
-
-**Soccer:**
-`!matches [league]` - Show today's matches (World Cup, MLS, NWSL, Premier, UCL)
-`!standings [league]` - Show league standings
-`!match <id>` - Show detailed match summary
-
-**Weather:**
-`!weather [location]` - Current weather and AQI
-
-**LatePass (URL tracking):**
-`!latepass [user]` - Show score/rank
-`!latepass leaderboard [limit]` - Top scores (default 10)
-`!latepass stats` - Server statistics
-`!latepass top [limit]` - Most reposted URLs (default 10)
-`!latepass viral [min]` - Viral URLs (default 10+ reposts)
-
-**Fun:**
-`!dice <notation>` - Roll dice (e.g., 3d6+2)
-`!8ball <question>` - Ask the magic 8-ball
-`!wut` - wut
-`!ping` - Check bot latency"""
-
-        await ctx.message.reply(help_text)
-
-    @commands.command()
     async def wut(self, ctx: commands.Context):
         """Responds with wut."""
         await ctx.send("wut")
