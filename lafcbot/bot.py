@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -29,6 +30,38 @@ def load_config() -> dict:
         print(f"Error parsing config.json: {e}")
         return {"world_cup": {"enabled": False}, "channel_leagues": {}}
 
+
+def setup_logging(config: dict):
+    """Configure logging based on config."""
+    log_level_str = config.get("log_level", "INFO").upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+    # We want the configured level to apply only to our "lafcbot" namespace.
+    # Configure root handler at NOTSET so individual loggers control emission.
+    logging.basicConfig(
+        level=logging.NOTSET,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Apply the configured level only to lafcbot.* loggers
+    app_logger = logging.getLogger("lafcbot")
+    app_logger.setLevel(log_level)
+
+    # Keep discord.py logger quiet (only show warnings and errors)
+    discord_logger = logging.getLogger("discord")
+    discord_logger.setLevel(logging.WARNING)
+
+    # Keep aiosqlite log output quiet as well
+    aiosqlite_logger = logging.getLogger("aiosqlite")
+    aiosqlite_logger.setLevel(logging.WARNING)
+
+    # Log the configuration from our module logger
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging configured: lafcbot={log_level_str}")
+
+
+# Load config and configure logging
+config = load_config()
+setup_logging(config)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -82,7 +115,6 @@ async def on_ready():
         print(f"Failed to load pandaping cog: {e}")
 
     # Load config and start World Cup task if enabled
-    config = load_config()
     wc_config = config.get("world_cup", {})
 
     # Add root-level timezone to wc_config if not already present

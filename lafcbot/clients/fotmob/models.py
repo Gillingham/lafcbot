@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -11,7 +10,7 @@ class Team:
 
     id: int
     name: str
-    logo_url: Optional[str] = None
+    logo_url: str | None = None
 
 
 @dataclass
@@ -22,10 +21,11 @@ class MatchEvent:
     type: str  # "goal", "card", "substitution", etc.
     minute: int
     team_id: int
-    player_name: Optional[str] = None
-    assist_name: Optional[str] = None  # Assist player for goals
-    description: Optional[str] = None
+    player_name: str | None = None
+    assist_name: str | None = None  # Assist player for goals
+    description: str | None = None
     own_goal: bool = False  # Whether this is an own goal
+    card_color: str | None = None  # "yellow" or "red" when applicable
 
 
 @dataclass
@@ -33,9 +33,9 @@ class Venue:
     """Represents a stadium/venue."""
 
     name: str
-    city: Optional[str] = None
-    country: Optional[str] = None
-    capacity: Optional[int] = None
+    city: str | None = None
+    country: str | None = None
+    capacity: int | None = None
 
 
 @dataclass
@@ -45,14 +45,14 @@ class Match:
     id: int
     home_team: Team
     away_team: Team
-    home_score: Optional[int]
-    away_score: Optional[int]
+    home_score: int | None
+    away_score: int | None
     status: str  # "finished", "live", "upcoming", etc.
-    start_time: Optional[datetime] = None
-    league_id: Optional[int] = None
-    league_name: Optional[str] = None
-    page_slug: Optional[str] = None  # URL slug for match page
-    venue: Optional[Venue] = None
+    start_time: datetime | None = None
+    league_id: int | None = None
+    league_name: str | None = None
+    page_slug: str | None = None  # URL slug for match page
+    venue: Venue | None = None
 
     @property
     def is_live(self) -> bool:
@@ -76,7 +76,7 @@ class Highlight:
     """Represents match highlight video information."""
 
     url: str
-    title: Optional[str] = None
+    title: str | None = None
 
 
 @dataclass
@@ -94,11 +94,11 @@ class MatchDetails:
     match: Match
     events: list[MatchEvent]
     stats: dict
-    lineups: Optional[dict] = None
-    broadcast_channels: Optional[list[BroadcastChannel]] = None
-    highlight: Optional[Highlight] = None  # Official match highlights
+    lineups: dict | None = None
+    broadcast_channels: list[BroadcastChannel] | None = None
+    highlight: Highlight | None = None  # Official match highlights
     extra_time: bool = False  # Whether match went to extra time
-    penalties: Optional[PenaltyShootout] = None  # Penalty shootout result
+    penalties: PenaltyShootout | None = None  # Penalty shootout result
 
 
 @dataclass
@@ -108,4 +108,4 @@ class League:
     id: int
     name: str
     matches: list[Match]
-    standings: Optional[dict] = None
+    standings: dict | None = None

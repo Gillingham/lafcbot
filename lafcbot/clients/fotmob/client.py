@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from datetime import date, datetime
-from typing import Optional
 
 import aiohttp
 
@@ -31,7 +30,7 @@ class FotMobClient:
     with automatic fallback when Cloudflare protection blocks API access.
     """
 
-    def __init__(self, session: Optional[aiohttp.ClientSession] = None):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         """
         Initialize the FotMob client.
 
@@ -42,6 +41,7 @@ class FotMobClient:
         self._session = session
         self._owns_session = session is None
         self._last_request_time = 0.0
+        self._page_slugs: dict[int, str] = {}
 
     async def __aenter__(self):
         if self._session is None:
@@ -67,7 +67,7 @@ class FotMobClient:
 
     async def _request_with_retry(
         self, url: str, method: str = "GET", **kwargs
-    ) -> Optional[bytes]:
+    ) -> bytes | None:
         """
         Make an HTTP request with exponential backoff retry logic.
 
@@ -108,7 +108,7 @@ class FotMobClient:
 
         return None
 
-    async def _fetch_api_endpoint(self, endpoint: str) -> Optional[dict]:
+    async def _fetch_api_endpoint(self, endpoint: str) -> dict | None:
         """
         Fetch data from a FotMob API endpoint.
 
@@ -131,7 +131,7 @@ class FotMobClient:
 
         return None
 
-    async def _fetch_page_html(self, page_path: str) -> Optional[str]:
+    async def _fetch_page_html(self, page_path: str) -> str | None:
         """
         Fetch HTML from a FotMob page.
 
@@ -153,7 +153,7 @@ class FotMobClient:
         return None
 
     async def get_matches_by_date(
-        self, target_date: Optional[str] = None, league_ids: Optional[list[int]] = None
+        self, target_date: str | None = None, league_ids: list[int] | None = None
     ) -> list[Match]:
         """
         Get matches for a specific date and leagues.
@@ -184,8 +184,8 @@ class FotMobClient:
         return self._parse_matches_from_api(data)
 
     async def get_match_details(
-        self, match_id: Optional[int] = None, page_slug: Optional[str] = None
-    ) -> Optional[MatchDetails]:
+        self, match_id: int | None = None, page_slug: str | None = None
+    ) -> MatchDetails | None:
         """
         Get detailed information about a specific match.
 
@@ -196,26 +196,77 @@ class FotMobClient:
         Returns:
             MatchDetails object, or None if fetch failed
         """
-        if match_id is not None:
-            endpoint = f"/api/matchDetails?matchId={match_id}"
-            data = await self._fetch_api_endpoint(endpoint)
-
-            if data:
-                return self._parse_match_details_from_api(data)
-            else:
-                logger.warning(
-                    f"API endpoint failed for match {match_id}, trying page scraping"
-                )
+        # Prefer scraping the HTML page slug first, then fallback to
+        # trying known match page URL patterns, and finally try API endpoints.
+        if page_slug is None and match_id is not None:
+            page_slug = self._page_slugs.get(match_id)
 
         if page_slug is not None:
             html = await self._fetch_page_html(page_slug)
             if html:
                 page_props = extract_page_props(html)
                 if page_props:
-                    # Also extract broadcast channels from HTML
                     broadcast_channels_data = extract_broadcast_channels(html)
-                    return self._parse_match_details_from_page(
-                        page_props, broadcast_channels_data
+                    try:
+                        return self._parse_match_details_from_page(
+                            page_props, broadcast_channels_data
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to parse match details from page_slug: {e}"
+                        )
+
+        # If we have a match_id, try common match page paths first when no page slug is available
+        if match_id is not None:
+            possible_paths = [
+                f"/matches/{match_id}",
+                f"/match/{match_id}",
+                f"/m/{match_id}",
+                f"/matches/{match_id}/",
+            ]
+            for path in possible_paths:
+                html = await self._fetch_page_html(path)
+                if not html:
+                    logger.debug(f"No HTML at fallback path: {path}")
+                    continue
+
+                page_props = extract_page_props(html)
+                if page_props:
+                    broadcast_channels_data = extract_broadcast_channels(html)
+                    try:
+                        logger.debug(f"Extracted page props from fallback path: {path}")
+                        return self._parse_match_details_from_page(
+                            page_props, broadcast_channels_data
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to parse match details from page {path}: {e}"
+                        )
+
+        # Last resort: try API endpoints (legacy behavior)
+        if match_id is not None:
+            api_endpoints = [
+                f"/api/matchDetails?matchId={match_id}",
+                f"/api/match?matchId={match_id}",
+                f"/api/match?match_id={match_id}",
+                f"/api/matchDetails?match_id={match_id}",
+            ]
+
+            data = None
+            for endpoint in api_endpoints:
+                data = await self._fetch_api_endpoint(endpoint)
+                if data:
+                    logger.debug(f"FotMob API returned data for endpoint: {endpoint}")
+                    break
+                else:
+                    logger.debug(f"No data from FotMob API endpoint: {endpoint}")
+
+            if data:
+                try:
+                    return self._parse_match_details_from_api(data)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to parse match details from API for {match_id}: {e}"
                     )
 
         return None
@@ -238,7 +289,7 @@ class FotMobClient:
 
         return []
 
-    async def get_league_standings(self, league_id: int) -> Optional[dict]:
+    async def get_league_standings(self, league_id: int) -> dict | None:
         """
         Get league standings/table.
 
@@ -303,8 +354,8 @@ class FotMobClient:
     def _parse_match_from_dict(
         self,
         data: dict,
-        league_id: Optional[int] = None,
-        league_name: Optional[str] = None,
+        league_id: int | None = None,
+        league_name: str | None = None,
     ) -> Match:
         """Parse a single match from a dictionary."""
         home_team = Team(
@@ -353,7 +404,7 @@ class FotMobClient:
                 except (ValueError, IndexError):
                     pass
 
-        return Match(
+        match = Match(
             id=int(data.get("id", 0)),
             home_team=home_team,
             away_team=away_team,
@@ -365,6 +416,9 @@ class FotMobClient:
             league_name=league_name,
             page_slug=data.get("pageUrl"),
         )
+        if match.page_slug:
+            self._page_slugs[match.id] = match.page_slug
+        return match
 
     def _parse_match_details_from_api(self, data: dict) -> MatchDetails:
         """Parse match details from API response or page props."""
@@ -443,18 +497,101 @@ class FotMobClient:
                     elif isinstance(assist_data, str):
                         assist_name = assist_data
 
+            # Normalize type and handle special event fields.
+            raw_type = event_data.get("type", "unknown")
+
+            # Prefer explicit `card`/`Card` fields for card color. Do NOT
+            # treat generic `eventType` as a card color unless the main type
+            # indicates a card to avoid misclassifying substitutions.
+            card_field = event_data.get("card") or event_data.get("Card")
+            card_color_val = None
+            if card_field:
+                try:
+                    card_color_val = str(card_field).lower()
+                except Exception:
+                    card_color_val = None
+
+            # Handle substitutions represented via `swap` array or explicit type
+            swap = event_data.get("swap") or event_data.get("Swap")
+            is_substitution = False
+            if swap and isinstance(swap, list) and len(swap) >= 2:
+                is_substitution = True
+
+            if card_color_val:
+                event_type = "card"
+                desc_parts = []
+                if event_data.get("text"):
+                    desc_parts.append(event_data.get("text"))
+                desc_parts.append(str(card_field))
+                description = " ".join(desc_parts)
+            elif is_substitution or str(raw_type).lower() in ("substitution", "sub"):
+                event_type = "substitution"
+                description = event_data.get("text")
+                # If swap array exists, prefer mapping player_out/ player_in
+                if swap and isinstance(swap, list) and len(swap) >= 2:
+                    try:
+                        player_in = (
+                            swap[0].get("name")
+                            if isinstance(swap[0], dict)
+                            else str(swap[0])
+                        )
+                        player_out = (
+                            swap[1].get("name")
+                            if isinstance(swap[1], dict)
+                            else str(swap[1])
+                        )
+                        if player_in and player_out:
+                            description = f"{player_in} on for {player_out}"
+                    except Exception:
+                        pass
+            else:
+                event_type = raw_type
+                description = event_data.get("text")
+
+            # Own goal flag might appear under different keys
+            own_goal_flag = event_data.get("isOwnGoal")
+            if own_goal_flag is None:
+                own_goal_flag = event_data.get("ownGoal", False)
+
+            # Map player fields; if swap provided use those values
+            if is_substitution and swap and isinstance(swap, list) and len(swap) >= 2:
+                try:
+                    player_in = (
+                        swap[0].get("name")
+                        if isinstance(swap[0], dict)
+                        else str(swap[0])
+                    )
+                    player_out = (
+                        swap[1].get("name")
+                        if isinstance(swap[1], dict)
+                        else str(swap[1])
+                    )
+                except Exception:
+                    player_in = None
+                    player_out = None
+            else:
+                player_in = None
+                player_out = None
+
             events.append(
                 MatchEvent(
                     id=event_data.get("eventId", event_data.get("id", 0)),
-                    type=event_data.get("type", "unknown"),
+                    type=event_type,
                     minute=event_data.get("time", 0),
                     team_id=event_data.get("teamId", 0),
-                    player_name=event_data.get("player", {}).get("name")
-                    if isinstance(event_data.get("player"), dict)
-                    else event_data.get("player"),
-                    assist_name=assist_name,
-                    description=event_data.get("text"),
-                    own_goal=event_data.get("isOwnGoal", False),
+                    player_name=(
+                        player_out
+                        if player_out
+                        else (
+                            event_data.get("player", {}).get("name")
+                            if isinstance(event_data.get("player"), dict)
+                            else event_data.get("player")
+                        )
+                    ),
+                    assist_name=(player_in if player_in else assist_name),
+                    description=description,
+                    own_goal=own_goal_flag or False,
+                    card_color=card_color_val,
                 )
             )
 
@@ -500,7 +637,7 @@ class FotMobClient:
 
     def _parse_match_details_from_page(
         self, page_props: dict, broadcast_channels_data: list = None
-    ) -> Optional[MatchDetails]:
+    ) -> MatchDetails | None:
         """Parse match details from scraped page props."""
         details = self._parse_match_details_from_api(page_props)
 
@@ -528,6 +665,8 @@ class FotMobClient:
         for match_data in fixtures:
             try:
                 match = self._parse_match_from_dict(match_data, league_id, league_name)
+                if match.page_slug:
+                    self._page_slugs[match.id] = match.page_slug
                 matches.append(match)
             except Exception as e:
                 logger.error(f"Failed to parse match from league page: {e}")

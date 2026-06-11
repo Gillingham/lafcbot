@@ -6,7 +6,6 @@ import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import aiohttp
 
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 class RedditGoalFetcher:
     """Fetches goal replay links from Reddit's r/soccer using public JSON API."""
 
-    def __init__(self, cache_path: Optional[str] = None):
+    def __init__(self, cache_path: str | None = None):
         """
         Initialize the Reddit goal fetcher.
 
@@ -30,7 +29,7 @@ class RedditGoalFetcher:
 
         self.cache_path = cache_path
         self.cache = self._load_cache()
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
         self._last_request_time = 0.0
         self._rate_limit_delay = (
             6.0  # 10 requests per minute = 6 seconds between requests
@@ -65,7 +64,8 @@ class RedditGoalFetcher:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
                 headers={
-                    "User-Agent": "lafcbot:v1.0.0 (Discord bot for soccer updates)"
+                    "User-Agent": "lafcbot:v1.0.0 (by /u/lafcbot)",
+                    "Accept": "application/json",
                 }
             )
 
@@ -83,7 +83,7 @@ class RedditGoalFetcher:
         scoring_team: str,
         home_score: int,
         away_score: int,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Search for a goal replay link on Reddit.
 
@@ -165,7 +165,7 @@ class RedditGoalFetcher:
 
     async def _search_strategy(
         self, query: str, match_time: datetime, sort: str = "relevance"
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Execute a single search strategy.
 
@@ -183,18 +183,21 @@ class RedditGoalFetcher:
         start_time = int((match_time - timedelta(hours=12)).timestamp())
         end_time = int((match_time + timedelta(hours=12)).timestamp())
 
-        url = (
-            f"https://www.reddit.com/r/soccer/search.json"
-            f"?q={query}+flair:Media+timestamp:{start_time}..{end_time}"
-            f"&restrict_sr=on&sort={sort}&limit=15"
-        )
+        params = {
+            "q": f"{query} flair:Media timestamp:{start_time}..{end_time}",
+            "restrict_sr": "on",
+            "sort": sort,
+            "limit": 15,
+        }
 
         try:
             if not self.session or self.session.closed:
                 await self._ensure_session()
 
             async with self.session.get(
-                url, timeout=aiohttp.ClientTimeout(total=10)
+                "https://www.reddit.com/r/soccer/search.json",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10),
             ) as response:
                 if response.status != 200:
                     logger.warning(f"Reddit search returned status {response.status}")
@@ -233,7 +236,7 @@ class RedditGoalFetcher:
                             "post_url": post_url,
                         }
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"Reddit search timed out for query: {query}")
         except Exception as e:
             logger.error(f"Reddit search failed for query '{query}': {e}")
@@ -242,7 +245,7 @@ class RedditGoalFetcher:
 
     async def fetch_multiple_goals(
         self, goals: list[dict], timeout: float = 5.0
-    ) -> dict[str, Optional[dict]]:
+    ) -> dict[str, dict | None]:
         """
         Fetch Reddit clips for multiple goals with timeout.
 
@@ -273,7 +276,7 @@ class RedditGoalFetcher:
                     timeout=timeout,
                 )
                 results[cache_key] = result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(f"Reddit search timed out for goal at {goal['minute']}'")
                 results[cache_key] = None
             except Exception as e:

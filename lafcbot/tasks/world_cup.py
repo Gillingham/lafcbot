@@ -11,6 +11,9 @@ from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
 
+# Threshold for considering an event "stale" (do not notify if older than this)
+STALE_EVENT_THRESHOLD = timedelta(minutes=10)
+
 logger = logging.getLogger(__name__)
 
 
@@ -191,17 +194,10 @@ class WorldCupTask:
             if self.fotmob_client is None:
                 return
 
-            # Find the channel across all guilds
-            channel_name = self.config.get("channel_name", "world-cup-2026")
-            channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.channels, name=channel_name)
-                if channel:
-                    break
-
-            if not channel:
-                print(f"Warning: {channel_name} channel not found")
-                return
+            regular_channel_name = self.config.get("channel_name", "world-cup-2026")
+            live_channel_name = self.config.get("live_monitoring", {}).get(
+                "channel_name", "world-cup-live"
+            )
 
             # Get World Cup matches (league ID 77)
             league_id = 77
@@ -247,7 +243,10 @@ class WorldCupTask:
                     matches_to_display = upcoming_by_date[next_date]
                     display_date = next_date
                 else:
-                    await channel.send("No World Cup matches scheduled.")
+                    await self._send_to_channels(
+                        "No World Cup matches scheduled.",
+                        [regular_channel_name, live_channel_name],
+                    )
                     return
 
                 # Determine header
@@ -441,20 +440,32 @@ class WorldCupTask:
                 if not m.is_live and not m.is_finished and m.start_time
             ]
 
+            logger.debug(
+                f"Schedule check: {len(all_matches)} total matches, {len(live_matches)} live, {len(upcoming_matches)} upcoming"
+            )
+
             if live_matches:
                 # Matches are live right now! Start monitoring
-                logger.info(f"Found {len(live_matches)} live World Cup match(es)")
+                match_names = ", ".join(
+                    f"{m.home_team.name} vs {m.away_team.name}" for m in live_matches
+                )
+                logger.info(
+                    f"Found {len(live_matches)} live World Cup match(es): {match_names}"
+                )
                 self.live_match_ids = {m.id for m in live_matches}
 
                 if (
                     not self.game_monitor_task
                     or not self.game_monitor_task.is_running()
                 ):
+                    logger.info("Starting game monitor for live matches...")
                     self.monitoring_active = True
                     if self.game_monitor_task is None:
                         self.game_monitor_task = self._create_game_monitor_task()
                     self.game_monitor_task.start()
-                    logger.info("Started game monitor for live matches")
+                    logger.info("Game monitor task started")
+                else:
+                    logger.debug("Game monitor already running, skipping start")
 
             elif upcoming_matches:
                 # Schedule check before next match
@@ -462,20 +473,37 @@ class WorldCupTask:
                 pre_match_min = self.config.get("live_monitoring", {}).get(
                     "pre_match_minutes", 15
                 )
-                check_time = next_match.start_time.astimezone(
-                    self.timezone
-                ) - timedelta(minutes=pre_match_min)
+                match_time_utc = next_match.start_time
+                match_time_local = match_time_utc.astimezone(self.timezone)
+                check_time = match_time_local - timedelta(minutes=pre_match_min)
+                now = datetime.now(self.timezone)
 
                 self.next_check_time = check_time
-                match_time_str = next_match.start_time.astimezone(
-                    self.timezone
-                ).strftime("%a %b %d at %I:%M %p %Z")
+                match_time_str = match_time_local.strftime("%a %b %d at %I:%M %p %Z")
                 check_time_str = check_time.strftime("%a %b %d at %I:%M %p %Z")
+                now_str = now.strftime("%a %b %d at %I:%M %p %Z")
 
                 logger.info(
-                    f"Next match: {next_match.home_team.name} vs {next_match.away_team.name} "
-                    f"at {match_time_str}. Will start monitoring at {check_time_str}"
+                    f"Next match: {next_match.home_team.name} vs {next_match.away_team.name}"
                 )
+                logger.info(
+                    f"  Match start time (UTC): {match_time_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+                )
+                logger.info(f"  Match start time (local): {match_time_str}")
+                logger.info(f"  Current time (local): {now_str}")
+                logger.info(f"  Pre-match check scheduled for: {check_time_str}")
+                # If we're already past pre-match time, start monitoring now
+                if now >= check_time:
+                    logger.info(
+                        "Current time is past pre-match window, starting monitoring now"
+                    )
+                    self.monitoring_active = True
+                    if self.game_monitor_task is None:
+                        self.game_monitor_task = self._create_game_monitor_task()
+                    self.game_monitor_task.start()
+                    logger.info("Game monitor task started")
+                else:
+                    logger.info(f"Will start monitoring at {check_time_str}")
 
             else:
                 # No matches with schedule info
@@ -513,6 +541,33 @@ class WorldCupTask:
             try:
                 # Get all live World Cup matches
                 live_matches = await self.fotmob_client.get_live_world_cup_matches()
+                # If no live matches from API, check if we have any in progress by time window
+                if not live_matches:
+                    logger.debug(
+                        "get_live_world_cup_matches() returned empty, checking by time window..."
+                    )
+                    all_matches = await self.fotmob_client.get_league_matches(77)
+                    now = datetime.now(self.timezone)
+                    # Matches are "in progress" if they started within last ~3 hours
+                    # (assuming matches last ~2 hours, plus some buffer for delays)
+                    live_matches = [
+                        m
+                        for m in all_matches
+                        if m.start_time
+                        and not m.is_finished
+                        and (
+                            now - m.start_time.astimezone(self.timezone)
+                        ).total_seconds()
+                        < 10800  # 3 hours
+                        and (
+                            now - m.start_time.astimezone(self.timezone)
+                        ).total_seconds()
+                        > -600  # not more than 10 min before kickoff
+                    ]
+                    if live_matches:
+                        logger.info(
+                            f"Found {len(live_matches)} match(es) in time window (not marked as is_live by API)"
+                        )
 
                 if not live_matches:
                     # No more live matches, stop monitoring
@@ -565,12 +620,17 @@ class WorldCupTask:
             # Get detailed match info
             details = await self.fotmob_client.get_match_details(match_id=match.id)
             if not details:
+                logger.warning(f"Could not get details for match {match.id}")
                 return
 
             match_id = match.id
+            match_name = (
+                f"{details.match.home_team.name} vs {details.match.away_team.name}"
+            )
 
             # Initialize match state if not tracked
             if match_id not in self.monitored_matches:
+                logger.info(f"Starting to monitor match: {match_name}")
                 self.monitored_matches[match_id] = {
                     "last_events": [],
                     "last_home_score": match.home_score or 0,
@@ -579,16 +639,37 @@ class WorldCupTask:
                     "extra_time_sent": False,
                     "penalties_sent": False,
                     "start_sent": False,
+                    "initialized_at": datetime.now(self.timezone),
+                    "page_slug": match.page_slug,
                 }
 
             state = self.monitored_matches[match_id]
 
-            if match.is_live and not state.get("start_sent", False):
-                await self._send_match_start_notification(details)
-                state["start_sent"] = True
+            match_started = match.is_live or details.match.is_live
+            if not match_started and details.match.start_time:
+                now = datetime.now(self.timezone)
+                start_time = details.match.start_time.astimezone(self.timezone)
+                match_started = start_time <= now <= start_time + timedelta(hours=3)
 
-            # Check for new goals
-            await self._check_for_goals(details, state, channel)
+            if match_started and not state.get("start_sent", False):
+                if details.match.start_time:
+                    start_time = details.match.start_time.astimezone(self.timezone)
+                    if datetime.now(self.timezone) - start_time > STALE_EVENT_THRESHOLD:
+                        logger.info(
+                            f"Skipping start notification for {match_name} because match began more than 5 minutes ago"
+                        )
+                        state["start_sent"] = True
+                    else:
+                        logger.info(f"Sending start notification for: {match_name}")
+                        await self._send_match_start_notification(details)
+                        state["start_sent"] = True
+                else:
+                    logger.info(f"Sending start notification for: {match_name}")
+                    await self._send_match_start_notification(details)
+                    state["start_sent"] = True
+
+            # Check for new events (goals, cards, etc.)
+            await self._check_for_events(details, state, channel)
 
             # Check for extra time
             await self._check_extra_time(details, state, channel)
@@ -631,26 +712,37 @@ class WorldCupTask:
             "channel_name", "world-cup-live"
         )
 
+        logger.debug(
+            f"Attempting to send start notification to channels: {regular_channel_name}, {live_channel_name}"
+        )
         await self._send_to_channels(message, [regular_channel_name, live_channel_name])
+        logger.info(f"Match start notification sent for {home_team} vs {away_team}")
 
     async def _send_to_channels(self, message, channel_names):
         """Send a message to one or more configured channels."""
         sent_channel_ids = set()
         for channel_name in channel_names:
             if not channel_name:
+                logger.debug("Skipping empty channel name")
                 continue
 
             channel = self._find_channel_by_name(channel_name)
-            if not channel or channel.id in sent_channel_ids:
+            if not channel:
+                logger.warning(f"Channel '{channel_name}' not found in any guild")
+                continue
+
+            if channel.id in sent_channel_ids:
+                logger.debug(
+                    f"Channel {channel_name} already has this message, skipping"
+                )
                 continue
 
             try:
                 await channel.send(message)
                 sent_channel_ids.add(channel.id)
+                logger.debug(f"Message sent to channel #{channel_name}")
             except Exception as e:
-                logger.error(
-                    f"Failed to send start message to channel {channel_name}: {e}"
-                )
+                logger.error(f"Failed to send message to channel {channel_name}: {e}")
 
     def _find_channel_by_name(self, channel_name):
         """Find a channel object by name across all guilds."""
@@ -659,6 +751,16 @@ class WorldCupTask:
             if channel:
                 return channel
         return None
+
+    def _is_event_older_than_threshold(
+        self, event, match_start_time, now, threshold: timedelta
+    ) -> bool:
+        """Determine whether an event occurred more than the threshold before now."""
+        if event.minute is None:
+            return False
+
+        event_time = match_start_time + timedelta(minutes=event.minute)
+        return now - event_time > threshold
 
     async def _check_for_goals(self, details, state, channel):
         """Check for new goals and send notifications."""
@@ -678,8 +780,241 @@ class WorldCupTask:
             if e.id not in old_event_ids and e.type.lower() == "goal"
         ]
 
+        now = datetime.now(self.timezone)
+        match_start_time = None
+        if details.match.start_time:
+            match_start_time = details.match.start_time.astimezone(self.timezone)
+
+        recent_goals = []
         for goal in new_goals:
+            if match_start_time is None and not state["last_events"]:
+                logger.info(
+                    f"Skipping unknown-age past goal for {details.match.home_team.name} vs {details.match.away_team.name} minute {goal.minute}"
+                )
+                continue
+
+            if match_start_time and self._is_event_older_than_threshold(
+                goal, match_start_time, now, STALE_EVENT_THRESHOLD
+            ):
+                logger.info(
+                    f"Skipping past goal notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {goal.minute}"
+                )
+                continue
+
+            recent_goals.append(goal)
+
+        for goal in recent_goals:
             await self._send_goal_notification(details, goal, channel)
+
+    async def _check_for_events(self, details, state, channel):
+        """Generic event checker that delegates to specific event handlers."""
+        try:
+            await self._check_for_goals(details, state, channel)
+        except Exception as e:
+            logger.error(f"Error checking goals: {e}")
+
+        try:
+            await self._check_for_cards(details, state, channel)
+        except Exception as e:
+            logger.error(f"Error checking cards: {e}")
+        try:
+            await self._check_for_substitutions(details, state, channel)
+        except Exception as e:
+            logger.error(f"Error checking substitutions: {e}")
+
+    async def _check_for_cards(self, details, state, channel):
+        """Check for new yellow/red card events and send notifications."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("cards", True):
+            return
+
+        old_event_ids = {e["id"] for e in state["last_events"]}
+        new_cards = [
+            e
+            for e in details.events
+            if e.id not in old_event_ids and self._is_card_event(e)
+        ]
+        logger.debug(
+            f"Checking cards: {len(new_cards)} new card event(s) out of {len(details.events)} total events"
+        )
+
+        now = datetime.now(self.timezone)
+        match_start_time = None
+        if details.match.start_time:
+            match_start_time = details.match.start_time.astimezone(self.timezone)
+
+        recent_cards = []
+        for card in new_cards:
+            if match_start_time is None and not state["last_events"]:
+                logger.info(
+                    f"Skipping unknown-age past card for {details.match.home_team.name} vs {details.match.away_team.name} minute {card.minute}"
+                )
+                continue
+
+            if match_start_time and self._is_event_older_than_threshold(
+                card, match_start_time, now, STALE_EVENT_THRESHOLD
+            ):
+                logger.info(
+                    f"Skipping past card notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {card.minute}"
+                )
+                continue
+
+            recent_cards.append(card)
+
+        logger.debug(
+            f"{len(recent_cards)} card notification(s) remaining after freshness checks"
+        )
+        for card in recent_cards:
+            await self._send_card_notification(details, card, channel)
+
+    def _is_card_event(self, event):
+        # Prefer explicit card_color if populated by parser
+        card_color = getattr(event, "card_color", None)
+        if card_color:
+            return card_color.lower() in ("yellow", "red")
+
+        # Fall back to event type or description inspection
+        try:
+            if event.type and str(event.type).lower() == "card":
+                return True
+        except Exception:
+            pass
+
+        event_text = f"{event.type or ''} {event.description or ''}".lower()
+        return "card" in event_text and ("yellow" in event_text or "red" in event_text)
+
+    def _get_card_color(self, event):
+        # Use explicit card_color when available
+        card_color = getattr(event, "card_color", None)
+        if card_color:
+            return str(card_color).lower()
+
+        event_text = f"{event.type or ''} {event.description or ''}".lower()
+        if "red" in event_text and "yellow" not in event_text:
+            return "red"
+        if "yellow" in event_text:
+            return "yellow"
+        if "red" in event_text:
+            return "red"
+        return "card"
+
+    def _is_substitution_event(self, event):
+        # Prefer explicit substitution type
+        try:
+            if event.type and str(event.type).lower() in ("substitution", "sub"):
+                return True
+        except Exception:
+            pass
+
+        # If assist_name and player_name are both present and different,
+        # it likely represents a swap (player out and player in)
+        if getattr(event, "assist_name", None) and getattr(event, "player_name", None):
+            return True
+
+        # Fall back to description containing 'on for' or 'sub'
+        event_text = f"{event.type or ''} {event.description or ''}".lower()
+        return "on for" in event_text or "sub" in event_text
+
+    async def _check_for_substitutions(self, details, state, channel):
+        """Check for substitutions and send notifications."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("substitutions", True):
+            return
+
+        old_event_ids = {e["id"] for e in state["last_events"]}
+        new_subs = [
+            e
+            for e in details.events
+            if e.id not in old_event_ids and self._is_substitution_event(e)
+        ]
+
+        logger.debug(
+            f"Checking substitutions: {len(new_subs)} new substitution event(s)"
+        )
+
+        now = datetime.now(self.timezone)
+        match_start_time = None
+        if details.match.start_time:
+            match_start_time = details.match.start_time.astimezone(self.timezone)
+
+        recent_subs = []
+        for sub in new_subs:
+            if match_start_time is None and not state["last_events"]:
+                logger.info(
+                    f"Skipping unknown-age past substitution for {details.match.home_team.name} vs {details.match.away_team.name} minute {sub.minute}"
+                )
+                continue
+
+            if match_start_time and self._is_event_older_than_threshold(
+                sub, match_start_time, now, STALE_EVENT_THRESHOLD
+            ):
+                logger.info(
+                    f"Skipping past substitution notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {sub.minute}"
+                )
+                continue
+
+            recent_subs.append(sub)
+
+        logger.debug(
+            f"{len(recent_subs)} substitution notification(s) remaining after freshness checks"
+        )
+
+        for sub in recent_subs:
+            await self._send_substitution_notification(details, sub, channel)
+
+    async def _send_substitution_notification(self, details, sub_event, channel):
+        """Send a substitution notification to Discord."""
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        player_out = sub_event.player_name or "Unknown"
+        player_in = getattr(sub_event, "assist_name", None)
+        minute = sub_event.minute
+
+        team_name = home_team if sub_event.team_id == match.home_team.id else away_team
+        team_flag = home_flag if sub_event.team_id == match.home_team.id else away_flag
+
+        emoji = "🔁"
+        if player_in:
+            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute}'"
+        else:
+            message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute}'"
+
+        await channel.send(message)
+
+    async def _send_card_notification(self, details, card_event, channel):
+        """Send a yellow or red card notification to Discord."""
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        card_color = self._get_card_color(card_event)
+        emoji = "🟥" if card_color == "red" else "🟨"
+        card_title = "Red Card" if card_color == "red" else "Yellow Card"
+
+        player = card_event.player_name or "Unknown"
+        minute = card_event.minute
+        team_name = home_team if card_event.team_id == match.home_team.id else away_team
+        team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
+
+        message = (
+            f"{emoji} **{card_title}:** {player} {minute}' for {team_flag} {team_name}"
+        )
+        if card_event.description:
+            description = card_event.description.strip()
+            if description.lower() not in {"yellow card", "red card"}:
+                message += f"\n{description}"
+
+        await channel.send(message)
 
     async def _send_goal_notification(self, details, goal_event, channel):
         """Send a goal notification to Discord."""
@@ -782,7 +1117,7 @@ class WorldCupTask:
                 new_content = message.content + f"\n\n🎥 [Replay]({result['post_url']})"
                 await message.edit(content=new_content)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug(f"Reddit search timed out for goal at {minute}'")
         except Exception as e:
             logger.error(f"Failed to add Reddit clip: {e}")
@@ -880,7 +1215,10 @@ class WorldCupTask:
 
             try:
                 # Get fresh match details
-                details = await self.fotmob_client.get_match_details(match_id=match_id)
+                details = await self.fotmob_client.get_match_details(
+                    match_id=match_id,
+                    page_slug=state.get("page_slug"),
+                )
 
                 if details and details.match.is_finished:
                     # Match finished, send summary
@@ -966,6 +1304,6 @@ class WorldCupTask:
         message = "\n".join(lines)
 
         # Send summary
-        await channel.send(message)
+        await self._send_to_channels(message, [channel_name])
 
         logger.info(f"Sent post-match summary for {home_team} vs {away_team}")
