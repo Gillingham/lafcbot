@@ -1,11 +1,24 @@
 """Open-Meteo API client for fetching current weather conditions."""
 
+import asyncio
 import logging
 from typing import Optional
 
 import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
+class OpenMeteoError(Exception):
+    """Base exception for Open-Meteo client errors."""
+
+
+class OpenMeteoNetworkError(OpenMeteoError):
+    """Network or timeout error while contacting Open-Meteo."""
+
+
+class OpenMeteoTimeoutError(OpenMeteoNetworkError):
+    """Timeout while contacting Open-Meteo."""
 
 
 class WeatherData:
@@ -73,6 +86,7 @@ class OpenMeteoClient:
     WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
     AIR_QUALITY_API_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
     GEOCODING_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
+    DEFAULT_TIMEOUT = 10
 
     # WMO Weather interpretation codes
     WEATHER_CODES = {
@@ -176,11 +190,14 @@ class OpenMeteoClient:
         }
 
         try:
-            # Fetch both weather and air quality concurrently
+            timeout = aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT)
+
             weather_task = self._session.get(
-                self.WEATHER_API_URL, params=weather_params
+                self.WEATHER_API_URL, params=weather_params, timeout=timeout
             )
-            aqi_task = self._session.get(self.AIR_QUALITY_API_URL, params=aqi_params)
+            aqi_task = self._session.get(
+                self.AIR_QUALITY_API_URL, params=aqi_params, timeout=timeout
+            )
 
             async with weather_task as weather_response, aqi_task as aqi_response:
                 if weather_response.status != 200:
@@ -200,12 +217,17 @@ class OpenMeteoClient:
 
                 return self._parse_weather_data(weather_data, display_name, aqi_value)
 
+        except asyncio.TimeoutError as e:
+            logger.error(f"Weather request timed out: {e}")
+            raise OpenMeteoTimeoutError("Weather service request timed out") from e
         except aiohttp.ClientError as e:
             logger.error(f"Weather request failed: {e}")
-            return None
+            raise OpenMeteoNetworkError(
+                "Network error contacting the weather service"
+            ) from e
         except Exception as e:
             logger.error(f"Unexpected error fetching weather: {e}")
-            return None
+            raise OpenMeteoError("Unexpected weather service error") from e
 
     # US state abbreviations map
     US_STATE_ABBR = {
@@ -329,8 +351,9 @@ class OpenMeteoClient:
         }
 
         try:
+            timeout = aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT)
             async with self._session.get(
-                self.GEOCODING_API_URL, params=params
+                self.GEOCODING_API_URL, params=params, timeout=timeout
             ) as response:
                 if response.status == 200:
                     data = await response.json()
@@ -348,9 +371,15 @@ class OpenMeteoClient:
                         if result:
                             return result
                 return None
+        except asyncio.TimeoutError as e:
+            logger.error(f"Geocoding timed out: {e}")
+            raise OpenMeteoTimeoutError("Geocoding request timed out") from e
+        except aiohttp.ClientError as e:
+            logger.error(f"Geocoding failed: {e}")
+            raise OpenMeteoNetworkError("Geocoding network error") from e
         except Exception as e:
             logger.error(f"Geocoding failed: {e}")
-            return None
+            raise OpenMeteoError("Geocoding failed") from e
 
     def _build_result(self, result: dict) -> Optional[tuple[float, float, str]]:
         """Build result tuple from geocoding result dict."""

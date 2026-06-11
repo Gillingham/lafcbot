@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from discord.ext import commands
 
 from lafcbot.clients.espn_client import ESPNClient
-from lafcbot.clients.open_meteo_client import OpenMeteoClient
+from lafcbot.clients.open_meteo_client import OpenMeteoClient, OpenMeteoError
 from lafcbot.db import get_user, set_user_weather_location
 
 
@@ -198,7 +198,7 @@ class MiscCog(commands.Cog):
         if location is None:
             prefs = await get_user(user_id)
             if prefs and prefs.get("last_weather_location"):
-                location = prefs["last_weather_location"]
+                location = str(prefs["last_weather_location"])
             else:
                 await ctx.send(
                     "Please specify a location (e.g., `!weather Seattle` or `!weather 90210`). "
@@ -243,6 +243,8 @@ class MiscCog(commands.Cog):
             response = "; ".join(parts)
             await ctx.message.reply(response)
 
+        except OpenMeteoError as e:
+            await ctx.send(f"Error fetching weather: {e}. Please try again later.")
         except Exception as e:
             import traceback
 
