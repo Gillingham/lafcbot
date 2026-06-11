@@ -334,8 +334,16 @@ class WorldCupTask:
                 if len(response) > 2000:
                     response = response[:1997] + "..."
 
-                await channel.send(response)
-                print(f"Sent daily World Cup matches to {channel.name}")
+                regular_channel_name = self.config.get("channel_name", "world-cup-2026")
+                live_channel_name = self.config.get("live_monitoring", {}).get(
+                    "channel_name", "world-cup-live"
+                )
+                await self._send_to_channels(
+                    response, [regular_channel_name, live_channel_name]
+                )
+                print(
+                    f"Sent daily World Cup matches to {regular_channel_name} and {live_channel_name}"
+                )
 
             except Exception as e:
                 print(f"Error in daily World Cup task: {e}")
@@ -570,9 +578,14 @@ class WorldCupTask:
                     "was_live": True,
                     "extra_time_sent": False,
                     "penalties_sent": False,
+                    "start_sent": False,
                 }
 
             state = self.monitored_matches[match_id]
+
+            if match.is_live and not state.get("start_sent", False):
+                await self._send_match_start_notification(details)
+                state["start_sent"] = True
 
             # Check for new goals
             await self._check_for_goals(details, state, channel)
@@ -593,6 +606,59 @@ class WorldCupTask:
 
         except Exception as e:
             logger.error(f"Error monitoring match {match.id}: {e}")
+
+    async def _send_match_start_notification(self, details):
+        """Send a notification when a World Cup match starts."""
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        kickoff_info = ""
+        if match.start_time:
+            start_time = match.start_time.astimezone(self.timezone)
+            kickoff_info = f"\nKickoff: {start_time.strftime('%b %d, %I:%M %p %Z')}"
+
+        message = (
+            f"🟢 **MATCH STARTED:** {home_flag} {home_team} vs {away_team} {away_flag}"
+            f"{kickoff_info}\n\n"
+            "Live updates are available in the World Cup live channel."
+        )
+
+        regular_channel_name = self.config.get("channel_name", "world-cup-2026")
+        live_channel_name = self.config.get("live_monitoring", {}).get(
+            "channel_name", "world-cup-live"
+        )
+
+        await self._send_to_channels(message, [regular_channel_name, live_channel_name])
+
+    async def _send_to_channels(self, message, channel_names):
+        """Send a message to one or more configured channels."""
+        sent_channel_ids = set()
+        for channel_name in channel_names:
+            if not channel_name:
+                continue
+
+            channel = self._find_channel_by_name(channel_name)
+            if not channel or channel.id in sent_channel_ids:
+                continue
+
+            try:
+                await channel.send(message)
+                sent_channel_ids.add(channel.id)
+            except Exception as e:
+                logger.error(
+                    f"Failed to send start message to channel {channel_name}: {e}"
+                )
+
+    def _find_channel_by_name(self, channel_name):
+        """Find a channel object by name across all guilds."""
+        for guild in self.bot.guilds:
+            channel = discord.utils.get(guild.channels, name=channel_name)
+            if channel:
+                return channel
+        return None
 
     async def _check_for_goals(self, details, state, channel):
         """Check for new goals and send notifications."""
