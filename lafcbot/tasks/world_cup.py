@@ -618,7 +618,9 @@ class WorldCupTask:
         """
         try:
             # Get detailed match info
-            details = await self.fotmob_client.get_match_details(match_id=match.id)
+            details = await self.fotmob_client.get_match_details(
+                match_id=match.id, force_refresh=True
+            )
             if not details:
                 logger.warning(f"Could not get details for match {match.id}")
                 return
@@ -631,8 +633,14 @@ class WorldCupTask:
             # Initialize match state if not tracked
             if match_id not in self.monitored_matches:
                 logger.info(f"Starting to monitor match: {match_name}")
+                # Populate last_events with ALL current events so we don't notify
+                # about events that already occurred before we started monitoring
+                initial_events = [
+                    {"id": e.id, "type": e.type, "minute": e.minute}
+                    for e in details.events
+                ]
                 self.monitored_matches[match_id] = {
-                    "last_events": [],
+                    "last_events": initial_events,
                     "last_home_score": match.home_score or 0,
                     "last_away_score": match.away_score or 0,
                     "was_live": True,
@@ -642,6 +650,10 @@ class WorldCupTask:
                     "initialized_at": datetime.now(self.timezone),
                     "page_slug": match.page_slug,
                 }
+                if initial_events:
+                    logger.info(
+                        f"Initialized monitoring with {len(initial_events)} existing events to avoid duplicates"
+                    )
 
             state = self.monitored_matches[match_id]
 
@@ -654,9 +666,13 @@ class WorldCupTask:
             if match_started and not state.get("start_sent", False):
                 if details.match.start_time:
                     start_time = details.match.start_time.astimezone(self.timezone)
-                    if datetime.now(self.timezone) - start_time > STALE_EVENT_THRESHOLD:
+                    now_check = datetime.now(self.timezone)
+                    age = now_check - start_time
+                    if age > STALE_EVENT_THRESHOLD:
                         logger.info(
-                            f"Skipping start notification for {match_name} because match began more than 5 minutes ago"
+                            f"Skipping start notification for {match_name} "
+                            f"(start time: {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, now: {now_check.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                            f"age: {age.total_seconds():.1f}s, threshold: {STALE_EVENT_THRESHOLD.total_seconds():.1f}s)"
                         )
                         state["start_sent"] = True
                     else:
@@ -752,16 +768,6 @@ class WorldCupTask:
                 return channel
         return None
 
-    def _is_event_older_than_threshold(
-        self, event, match_start_time, now, threshold: timedelta
-    ) -> bool:
-        """Determine whether an event occurred more than the threshold before now."""
-        if event.minute is None:
-            return False
-
-        event_time = match_start_time + timedelta(minutes=event.minute)
-        return now - event_time > threshold
-
     async def _check_for_goals(self, details, state, channel):
         """Check for new goals and send notifications."""
         notifications_config = self.config.get("live_monitoring", {}).get(
@@ -780,30 +786,11 @@ class WorldCupTask:
             if e.id not in old_event_ids and e.type.lower() == "goal"
         ]
 
-        now = datetime.now(self.timezone)
-        match_start_time = None
-        if details.match.start_time:
-            match_start_time = details.match.start_time.astimezone(self.timezone)
+        # Since we now initialize last_events with all existing events when monitoring starts,
+        # new_goals should only contain truly new events. No staleness check needed - if the
+        # event ID is new, we should notify about it.
 
-        recent_goals = []
         for goal in new_goals:
-            if match_start_time is None and not state["last_events"]:
-                logger.info(
-                    f"Skipping unknown-age past goal for {details.match.home_team.name} vs {details.match.away_team.name} minute {goal.minute}"
-                )
-                continue
-
-            if match_start_time and self._is_event_older_than_threshold(
-                goal, match_start_time, now, STALE_EVENT_THRESHOLD
-            ):
-                logger.info(
-                    f"Skipping past goal notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {goal.minute}"
-                )
-                continue
-
-            recent_goals.append(goal)
-
-        for goal in recent_goals:
             await self._send_goal_notification(details, goal, channel)
 
     async def _check_for_events(self, details, state, channel):
@@ -840,33 +827,9 @@ class WorldCupTask:
             f"Checking cards: {len(new_cards)} new card event(s) out of {len(details.events)} total events"
         )
 
-        now = datetime.now(self.timezone)
-        match_start_time = None
-        if details.match.start_time:
-            match_start_time = details.match.start_time.astimezone(self.timezone)
-
-        recent_cards = []
+        # Since we initialize last_events with all existing events when monitoring starts,
+        # new_cards should only contain truly new events.
         for card in new_cards:
-            if match_start_time is None and not state["last_events"]:
-                logger.info(
-                    f"Skipping unknown-age past card for {details.match.home_team.name} vs {details.match.away_team.name} minute {card.minute}"
-                )
-                continue
-
-            if match_start_time and self._is_event_older_than_threshold(
-                card, match_start_time, now, STALE_EVENT_THRESHOLD
-            ):
-                logger.info(
-                    f"Skipping past card notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {card.minute}"
-                )
-                continue
-
-            recent_cards.append(card)
-
-        logger.debug(
-            f"{len(recent_cards)} card notification(s) remaining after freshness checks"
-        )
-        for card in recent_cards:
             await self._send_card_notification(details, card, channel)
 
     def _is_card_event(self, event):
@@ -936,34 +899,9 @@ class WorldCupTask:
             f"Checking substitutions: {len(new_subs)} new substitution event(s)"
         )
 
-        now = datetime.now(self.timezone)
-        match_start_time = None
-        if details.match.start_time:
-            match_start_time = details.match.start_time.astimezone(self.timezone)
-
-        recent_subs = []
+        # Since we initialize last_events with all existing events when monitoring starts,
+        # new_subs should only contain truly new events.
         for sub in new_subs:
-            if match_start_time is None and not state["last_events"]:
-                logger.info(
-                    f"Skipping unknown-age past substitution for {details.match.home_team.name} vs {details.match.away_team.name} minute {sub.minute}"
-                )
-                continue
-
-            if match_start_time and self._is_event_older_than_threshold(
-                sub, match_start_time, now, STALE_EVENT_THRESHOLD
-            ):
-                logger.info(
-                    f"Skipping past substitution notification for {details.match.home_team.name} vs {details.match.away_team.name} minute {sub.minute}"
-                )
-                continue
-
-            recent_subs.append(sub)
-
-        logger.debug(
-            f"{len(recent_subs)} substitution notification(s) remaining after freshness checks"
-        )
-
-        for sub in recent_subs:
             await self._send_substitution_notification(details, sub, channel)
 
     async def _send_substitution_notification(self, details, sub_event, channel):

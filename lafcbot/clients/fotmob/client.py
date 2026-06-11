@@ -42,6 +42,7 @@ class FotMobClient:
         self._owns_session = session is None
         self._last_request_time = 0.0
         self._page_slugs: dict[int, str] = {}
+        self._match_details_cache: dict[int, tuple[float, MatchDetails]] = {}
 
     async def __aenter__(self):
         if self._session is None:
@@ -184,7 +185,10 @@ class FotMobClient:
         return self._parse_matches_from_api(data)
 
     async def get_match_details(
-        self, match_id: int | None = None, page_slug: str | None = None
+        self,
+        match_id: int | None = None,
+        page_slug: str | None = None,
+        force_refresh: bool = False,
     ) -> MatchDetails | None:
         """
         Get detailed information about a specific match.
@@ -192,10 +196,17 @@ class FotMobClient:
         Args:
             match_id: Match ID (for API endpoint method)
             page_slug: Page slug like "/matches/team1-vs-team2/abc123" (for scraping method)
+            force_refresh: If True, bypass the internal cache.
 
         Returns:
             MatchDetails object, or None if fetch failed
         """
+        if not force_refresh and match_id in self._match_details_cache:
+            timestamp, details = self._match_details_cache[match_id]
+            if asyncio.get_event_loop().time() - timestamp < 30:
+                logger.debug(f"Returning cached details for match {match_id}")
+                return details
+
         # Prefer scraping the HTML page slug first, then fallback to
         # trying known match page URL patterns, and finally try API endpoints.
         if page_slug is None and match_id is not None:
@@ -208,9 +219,15 @@ class FotMobClient:
                 if page_props:
                     broadcast_channels_data = extract_broadcast_channels(html)
                     try:
-                        return self._parse_match_details_from_page(
+                        details = self._parse_match_details_from_page(
                             page_props, broadcast_channels_data
                         )
+                        if details and match_id:
+                            self._match_details_cache[match_id] = (
+                                asyncio.get_event_loop().time(),
+                                details,
+                            )
+                        return details
                     except Exception as e:
                         logger.error(
                             f"Failed to parse match details from page_slug: {e}"
@@ -235,9 +252,18 @@ class FotMobClient:
                     broadcast_channels_data = extract_broadcast_channels(html)
                     try:
                         logger.debug(f"Extracted page props from fallback path: {path}")
-                        return self._parse_match_details_from_page(
+                        # Store the successful path for future use to avoid discovery loop
+                        if match_id:
+                            self._page_slugs[match_id] = path
+                        details = self._parse_match_details_from_page(
                             page_props, broadcast_channels_data
                         )
+                        if details and match_id:
+                            self._match_details_cache[match_id] = (
+                                asyncio.get_event_loop().time(),
+                                details,
+                            )
+                        return details
                     except Exception as e:
                         logger.error(
                             f"Failed to parse match details from page {path}: {e}"
@@ -263,7 +289,13 @@ class FotMobClient:
 
             if data:
                 try:
-                    return self._parse_match_details_from_api(data)
+                    details = self._parse_match_details_from_api(data)
+                    if details and match_id:
+                        self._match_details_cache[match_id] = (
+                            asyncio.get_event_loop().time(),
+                            details,
+                        )
+                    return details
                 except Exception as e:
                     logger.error(
                         f"Failed to parse match details from API for {match_id}: {e}"

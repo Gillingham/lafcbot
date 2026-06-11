@@ -39,6 +39,6 @@ LEAGUE_ALIASES = {
     "uefa": "champions_league",
 }
 
-REQUEST_DELAY = 1.0
+REQUEST_DELAY = 0.5
 MAX_RETRIES = 3
-RETRY_DELAY = 2.0
+RETRY_DELAY = 1.0
