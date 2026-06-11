@@ -62,11 +62,22 @@ class RedditGoalFetcher:
     async def _ensure_session(self):
         """Ensure aiohttp session exists."""
         if self.session is None or self.session.closed:
+            # Match golazo's HTTP client configuration exactly
+            connector = aiohttp.TCPConnector(
+                limit=10,  # MaxIdleConns
+                limit_per_host=10,  # MaxIdleConnsPerHost
+                ttl_dns_cache=300,
+            )
+            timeout = aiohttp.ClientTimeout(
+                total=10
+            )  # Match golazo's 10 second timeout
+
             self.session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=timeout,
                 headers={
-                    "User-Agent": "lafcbot:v1.0.0 (by /u/lafcbot)",
-                    "Accept": "application/json",
-                }
+                    "User-Agent": "golazo:v1.0.0 (by /u/golazo_app)",
+                },
             )
 
     async def close(self):
