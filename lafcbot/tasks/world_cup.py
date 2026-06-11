@@ -11,7 +11,8 @@ from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
 
-# Threshold for considering an event "stale" (do not notify if older than this)
+# Threshold for considering notifications "stale" (do not send if event/match is older than this)
+# Used for: match start notifications and post-match summaries
 STALE_EVENT_THRESHOLD = timedelta(minutes=10)
 
 logger = logging.getLogger(__name__)
@@ -647,6 +648,7 @@ class WorldCupTask:
                     "extra_time_sent": False,
                     "penalties_sent": False,
                     "start_sent": False,
+                    "summary_sent": False,
                     "initialized_at": datetime.now(self.timezone),
                     "page_slug": match.page_slug,
                 }
@@ -1151,6 +1153,10 @@ class WorldCupTask:
             if not state.get("was_live"):
                 continue
 
+            # Skip if we already sent the summary
+            if state.get("summary_sent"):
+                continue
+
             try:
                 # Get fresh match details
                 details = await self.fotmob_client.get_match_details(
@@ -1159,7 +1165,11 @@ class WorldCupTask:
                 )
 
                 if details and details.match.is_finished:
-                    # Match finished, send summary
+                    # Mark summary as sent BEFORE calling _send_match_summary to prevent
+                    # duplicates if the match is checked again before dict deletion
+                    state["summary_sent"] = True
+
+                    # Match finished, send summary (may skip if stale or channel not found)
                     await self._send_match_summary(details)
 
                     # Remove from monitoring
@@ -1172,6 +1182,31 @@ class WorldCupTask:
         """Send post-match summary with highlights and goal clips."""
         live_config = self.config.get("live_monitoring", {})
         channel_name = live_config.get("channel_name", "world-cup-live")
+
+        # Check if match ended too long ago to send summary
+        # Use the last event's minute to calculate actual match duration
+        if details.match.start_time and details.events:
+            start_time = details.match.start_time.astimezone(self.timezone)
+
+            # Find the last event minute to estimate when the match actually ended
+            # FotMob includes Half events with "FT" (full time) which mark the end
+            last_event_minute = max(
+                (e.minute for e in details.events if e.minute is not None), default=90
+            )
+
+            # Add buffer for post-match activities (typically 5-10 minutes after last event)
+            estimated_end_time = start_time + timedelta(minutes=last_event_minute + 10)
+            now = datetime.now(self.timezone)
+            age_since_end = now - estimated_end_time
+
+            if age_since_end > STALE_EVENT_THRESHOLD:
+                logger.info(
+                    f"Skipping post-match summary for {details.match.home_team.name} vs {details.match.away_team.name} "
+                    f"(last event: minute {last_event_minute}, estimated end: {estimated_end_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                    f"now: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}, age since end: {age_since_end.total_seconds():.1f}s, "
+                    f"threshold: {STALE_EVENT_THRESHOLD.total_seconds():.1f}s)"
+                )
+                return
 
         # Find channel
         channel = None
