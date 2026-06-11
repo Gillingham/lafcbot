@@ -585,6 +585,11 @@ class FotMobClient:
             if own_goal_flag is None:
                 own_goal_flag = event_data.get("ownGoal", False)
 
+            # Extract half type for Half events (HT or FT)
+            half_type_val = None
+            if str(raw_type).lower() == "half":
+                half_type_val = event_data.get("halfStrShort")  # "HT" or "FT"
+
             # Map player fields; if swap provided use those values
             if is_substitution and swap and isinstance(swap, list) and len(swap) >= 2:
                 try:
@@ -624,6 +629,7 @@ class FotMobClient:
                     description=description,
                     own_goal=own_goal_flag or False,
                     card_color=card_color_val,
+                    half_type=half_type_val,
                 )
             )
 

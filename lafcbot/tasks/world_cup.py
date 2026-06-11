@@ -810,6 +810,10 @@ class WorldCupTask:
             await self._check_for_substitutions(details, state, channel)
         except Exception as e:
             logger.error(f"Error checking substitutions: {e}")
+        try:
+            await self._check_for_half_events(details, state, channel)
+        except Exception as e:
+            logger.error(f"Error checking half events: {e}")
 
     async def _check_for_cards(self, details, state, channel):
         """Check for new yellow/red card events and send notifications."""
@@ -926,6 +930,79 @@ class WorldCupTask:
             message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute}'"
         else:
             message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute}'"
+
+        await channel.send(message)
+
+    async def _check_for_half_events(self, details, state, channel):
+        """Check for half-time and full-time events."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("half_events", True):
+            return
+
+        old_event_ids = {e["id"] for e in state["last_events"]}
+        new_half_events = [
+            e
+            for e in details.events
+            if e.id not in old_event_ids and self._is_half_event(e)
+        ]
+
+        logger.debug(f"Checking half events: {len(new_half_events)} new half event(s)")
+
+        # Since we initialize last_events with all existing events when monitoring starts,
+        # new_half_events should only contain truly new events.
+        for half_event in new_half_events:
+            await self._send_half_event_notification(details, half_event, channel)
+
+    def _is_half_event(self, event):
+        """Check if event is a half-time or full-time event."""
+        try:
+            if event.type and str(event.type).lower() == "half":
+                return True
+        except Exception:
+            pass
+        return False
+
+    async def _send_half_event_notification(self, details, half_event, channel):
+        """Send a half-time or full-time notification to Discord."""
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        # Get the half type from the event (HT or FT)
+        half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
+
+        # Calculate score from events
+        home_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.home_team.id
+            ]
+        )
+        away_goals = len(
+            [
+                e
+                for e in details.events
+                if e.type.lower() == "goal" and e.team_id == match.away_team.id
+            ]
+        )
+
+        score_line = (
+            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
+        )
+
+        if half_type == "HT":
+            emoji = "⏸️"
+            title = "HALF-TIME"
+        else:
+            emoji = "🏁"
+            title = "FULL-TIME"
+
+        message = f"{emoji} **{title}:** {score_line}"
 
         await channel.send(message)
 

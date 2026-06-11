@@ -26,6 +26,7 @@ class MatchEvent:
     description: str | None = None
     own_goal: bool = False  # Whether this is an own goal
     card_color: str | None = None  # "yellow" or "red" when applicable
+    half_type: str | None = None  # "HT" for half-time, "FT" for full-time
 
 
 @dataclass
