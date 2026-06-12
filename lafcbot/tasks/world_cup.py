@@ -975,21 +975,9 @@ class WorldCupTask:
         # Get the half type from the event (HT or FT)
         half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
 
-        # Calculate score from events
-        home_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.home_team.id
-            ]
-        )
-        away_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.away_team.id
-            ]
-        )
+        # Get score directly from match object
+        home_goals = match.home_score or 0
+        away_goals = match.away_score or 0
 
         score_line = (
             f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
@@ -1052,21 +1040,9 @@ class WorldCupTask:
         scorer = goal_event.player_name or "Unknown"
         minute = goal_event.minute
 
-        # Calculate current score (approximate based on events)
-        home_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.home_team.id
-            ]
-        )
-        away_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.away_team.id
-            ]
-        )
+        # Get current score directly from match object
+        home_goals = match.home_score or 0
+        away_goals = match.away_score or 0
 
         score_line = (
             f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
@@ -1154,21 +1130,9 @@ class WorldCupTask:
             home_flag = get_country_flag(home_team)
             away_flag = get_country_flag(away_team)
 
-            # Get scores from events
-            home_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.home_team.id
-                ]
-            )
-            away_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.away_team.id
-                ]
-            )
+            # Get scores directly from match object
+            home_goals = match.home_score or 0
+            away_goals = match.away_score or 0
 
             message = (
                 f"⏱️ **EXTRA TIME:** {home_flag} {home_team} {home_goals}-{away_goals} "
@@ -1193,21 +1157,9 @@ class WorldCupTask:
             home_flag = get_country_flag(home_team)
             away_flag = get_country_flag(away_team)
 
-            # Get regular time scores
-            home_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.home_team.id
-                ]
-            )
-            away_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.away_team.id
-                ]
-            )
+            # Get regular time scores directly from match object
+            home_goals = match.home_score or 0
+            away_goals = match.away_score or 0
 
             message = (
                 f"🎯 **PENALTY SHOOTOUT:** {home_flag} {home_team} vs {away_team} {away_flag}\n\n"
@@ -1301,21 +1253,9 @@ class WorldCupTask:
         home_flag = get_country_flag(home_team)
         away_flag = get_country_flag(away_team)
 
-        # Calculate final score from events
-        home_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.home_team.id
-            ]
-        )
-        away_goals = len(
-            [
-                e
-                for e in details.events
-                if e.type.lower() == "goal" and e.team_id == match.away_team.id
-            ]
-        )
+        # Get final score directly from match object
+        home_goals = match.home_score or 0
+        away_goals = match.away_score or 0
 
         # Build message
         lines = [
