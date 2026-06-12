@@ -1,7 +1,9 @@
 """FotMob API client for fetching match and league data."""
 
 import asyncio
+import json
 import logging
+import time
 from datetime import date, datetime
 
 import aiohttp
@@ -67,7 +69,7 @@ class FotMobClient:
         self._last_request_time = asyncio.get_event_loop().time()
 
     async def _request_with_retry(
-        self, url: str, method: str = "GET", **kwargs
+        self, url: str, method: str = "GET", headers: dict | None = None, **kwargs
     ) -> bytes | None:
         """
         Make an HTTP request with exponential backoff retry logic.
@@ -84,11 +86,17 @@ class FotMobClient:
             self._session = aiohttp.ClientSession(headers=HEADERS)
             self._owns_session = True
 
+        request_headers = HEADERS.copy()
+        if headers:
+            request_headers.update(headers)
+
         await self._rate_limit()
 
         for attempt in range(MAX_RETRIES):
             try:
-                async with self._session.request(method, url, **kwargs) as response:
+                async with self._session.request(
+                    method, url, headers=request_headers, **kwargs
+                ) as response:
                     if response.status == 200:
                         return await response.read()
                     elif response.status == 403:
@@ -109,18 +117,27 @@ class FotMobClient:
 
         return None
 
-    async def _fetch_api_endpoint(self, endpoint: str) -> dict | None:
+    async def _fetch_api_endpoint(
+        self, endpoint: str, cache_bust: bool = False
+    ) -> dict | None:
         """
         Fetch data from a FotMob API endpoint.
 
         Args:
             endpoint: API endpoint path (e.g., "/api/matchDetails?matchId=123")
+            cache_bust: Whether to add cache-busting headers and parameters.
 
         Returns:
             Parsed JSON response, or None if request failed
         """
         url = f"{BASE_URL}{endpoint}"
-        response_body = await self._request_with_retry(url)
+        headers = None
+        if cache_bust:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}_cb={int(time.time())}"
+            headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
+
+        response_body = await self._request_with_retry(url, headers=headers)
 
         if response_body:
             try:
@@ -132,18 +149,27 @@ class FotMobClient:
 
         return None
 
-    async def _fetch_page_html(self, page_path: str) -> str | None:
+    async def _fetch_page_html(
+        self, page_path: str, cache_bust: bool = False
+    ) -> str | None:
         """
         Fetch HTML from a FotMob page.
 
         Args:
             page_path: Page path (e.g., "/leagues/130")
+            cache_bust: Whether to add cache-busting headers and parameters.
 
         Returns:
             Raw HTML content, or None if request failed
         """
         url = f"{BASE_URL}{page_path}"
-        response_body = await self._request_with_retry(url)
+        headers = None
+        if cache_bust:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}_cb={int(time.time())}"
+            headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
+
+        response_body = await self._request_with_retry(url, headers=headers)
 
         if response_body:
             try:
@@ -213,10 +239,18 @@ class FotMobClient:
             page_slug = self._page_slugs.get(match_id)
 
         if page_slug is not None:
-            html = await self._fetch_page_html(page_slug)
+            html = await self._fetch_page_html(page_slug, cache_bust=force_refresh)
             if html:
                 page_props = extract_page_props(html)
                 if page_props:
+                    # Dump JSON for analysis if match_id is provided
+                    if match_id:
+                        dump_path = f"match_{match_id}_dump.json"
+                        try:
+                            with open(dump_path, "w") as f:
+                                json.dump(page_props, f, indent=2)
+                        except Exception as e:
+                            logger.error(f"Failed to dump match JSON: {e}")
                     broadcast_channels_data = extract_broadcast_channels(html)
                     try:
                         details = self._parse_match_details_from_page(
@@ -242,7 +276,7 @@ class FotMobClient:
                 f"/matches/{match_id}/",
             ]
             for path in possible_paths:
-                html = await self._fetch_page_html(path)
+                html = await self._fetch_page_html(path, cache_bust=force_refresh)
                 if not html:
                     logger.debug(f"No HTML at fallback path: {path}")
                     continue
@@ -280,7 +314,9 @@ class FotMobClient:
 
             data = None
             for endpoint in api_endpoints:
-                data = await self._fetch_api_endpoint(endpoint)
+                data = await self._fetch_api_endpoint(
+                    endpoint, cache_bust=force_refresh
+                )
                 if data:
                     logger.debug(f"FotMob API returned data for endpoint: {endpoint}")
                     break
@@ -289,6 +325,13 @@ class FotMobClient:
 
             if data:
                 try:
+                    # Dump JSON for analysis
+                    dump_path = f"match_{match_id}_dump.json"
+                    try:
+                        with open(dump_path, "w") as f:
+                            json.dump(data, f, indent=2)
+                    except Exception as e:
+                        logger.error(f"Failed to dump match JSON: {e}")
                     details = self._parse_match_details_from_api(data)
                     if details and match_id:
                         self._match_details_cache[match_id] = (
@@ -313,7 +356,7 @@ class FotMobClient:
         Returns:
             List of Match objects
         """
-        html = await self._fetch_page_html(f"/leagues/{league_id}")
+        html = await self._fetch_page_html(f"/leagues/{league_id}", cache_bust=True)
         if html:
             page_props = extract_page_props(html)
             if page_props:
@@ -553,7 +596,6 @@ class FotMobClient:
             # Extract assist for goals
             assist_name = None
             if event_data.get("type") == "Goal":
-                # Assist can be in multiple places
                 assist_data = event_data.get("assist")
                 if assist_data:
                     if isinstance(assist_data, dict):
@@ -563,10 +605,12 @@ class FotMobClient:
 
             # Normalize type and handle special event fields.
             raw_type = event_data.get("type", "unknown")
+            raw_type_lower = str(raw_type).lower()
+            description = event_data.get("text")
+            half_type_val = None
+            player_in = None
+            player_out = None
 
-            # Prefer explicit `card`/`Card` fields for card color. Do NOT
-            # treat generic `eventType` as a card color unless the main type
-            # indicates a card to avoid misclassifying substitutions.
             card_field = event_data.get("card") or event_data.get("Card")
             card_color_val = None
             if card_field:
@@ -575,23 +619,20 @@ class FotMobClient:
                 except Exception:
                     card_color_val = None
 
-            # Handle substitutions represented via `swap` array or explicit type
             swap = event_data.get("swap") or event_data.get("Swap")
-            is_substitution = False
-            if swap and isinstance(swap, list) and len(swap) >= 2:
-                is_substitution = True
+            is_substitution = (
+                swap and isinstance(swap, list) and len(swap) >= 2
+            ) or raw_type_lower in ("substitution", "sub")
 
             if card_color_val:
                 event_type = "card"
                 desc_parts = []
-                if event_data.get("text"):
-                    desc_parts.append(event_data.get("text"))
+                if description:
+                    desc_parts.append(description)
                 desc_parts.append(str(card_field))
                 description = " ".join(desc_parts)
-            elif is_substitution or str(raw_type).lower() in ("substitution", "sub"):
+            elif is_substitution:
                 event_type = "substitution"
-                description = event_data.get("text")
-                # If swap array exists, prefer mapping player_out/ player_in
                 if swap and isinstance(swap, list) and len(swap) >= 2:
                     try:
                         player_in = (
@@ -608,39 +649,21 @@ class FotMobClient:
                             description = f"{player_in} on for {player_out}"
                     except Exception:
                         pass
+            elif raw_type_lower in ("half", "ht", "ft", "periodend"):
+                event_type = "half"
+                half_type_val = event_data.get("halfStrShort") or (
+                    "HT"
+                    if raw_type_lower == "ht"
+                    else "FT"
+                    if raw_type_lower == "ft"
+                    else None
+                )
             else:
                 event_type = raw_type
-                description = event_data.get("text")
 
-            # Own goal flag might appear under different keys
             own_goal_flag = event_data.get("isOwnGoal")
             if own_goal_flag is None:
                 own_goal_flag = event_data.get("ownGoal", False)
-
-            # Extract half type for Half events (HT or FT)
-            half_type_val = None
-            if str(raw_type).lower() == "half":
-                half_type_val = event_data.get("halfStrShort")  # "HT" or "FT"
-
-            # Map player fields; if swap provided use those values
-            if is_substitution and swap and isinstance(swap, list) and len(swap) >= 2:
-                try:
-                    player_in = (
-                        swap[0].get("name")
-                        if isinstance(swap[0], dict)
-                        else str(swap[0])
-                    )
-                    player_out = (
-                        swap[1].get("name")
-                        if isinstance(swap[1], dict)
-                        else str(swap[1])
-                    )
-                except Exception:
-                    player_in = None
-                    player_out = None
-            else:
-                player_in = None
-                player_out = None
 
             events.append(
                 MatchEvent(

@@ -639,6 +639,7 @@ class WorldCupTask:
                 initial_events = [
                     {"id": e.id, "type": e.type, "minute": e.minute}
                     for e in details.events
+                    if not self._is_half_event(e)
                 ]
                 self.monitored_matches[match_id] = {
                     "last_events": initial_events,
@@ -960,6 +961,9 @@ class WorldCupTask:
         try:
             if event.type and str(event.type).lower() == "half":
                 return True
+            etype = str(event.type or "").lower()
+            # Normalize check for various halftime/fulltime indicators
+            return etype in ("half", "half-time", "ht", "ft", "periodend")
         except Exception:
             pass
         return False
