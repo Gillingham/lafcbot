@@ -570,6 +570,9 @@ class WorldCupTask:
                             f"Found {len(live_matches)} match(es) in time window (not marked as is_live by API)"
                         )
 
+                # Check for matches that finished before deciding to stop
+                await self._check_finished_matches()
+
                 if not live_matches:
                     # No more live matches, stop monitoring
                     logger.info("No more live matches, stopping game monitor")
@@ -593,9 +596,6 @@ class WorldCupTask:
                 # Check each live match for new events
                 for match in live_matches:
                     await self._monitor_match(match, channel)
-
-                # Check for matches that finished
-                await self._check_finished_matches()
 
             except Exception as e:
                 logger.error(f"Error in game monitor: {e}")
