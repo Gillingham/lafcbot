@@ -403,13 +403,44 @@ class FotMobClient:
         )
 
         status_obj = data.get("status", {})
-        status = (
-            status_obj.get("finished")
-            and "finished"
-            or status_obj.get("started")
-            and "live"
-            or "upcoming"
-        )
+
+        # Extract match time display (e.g., "45'+2", "88'", "FT")
+        match_time_display = None
+
+        # First, check for live time (actual minute) which is most reliable for live matches
+        if "liveTime" in status_obj and isinstance(status_obj["liveTime"], dict):
+            live_time = status_obj["liveTime"]
+            minute = live_time.get("short")
+            if minute:
+                match_time_display = minute
+
+        # Determine match state from reason field
+        if "reason" in status_obj and isinstance(status_obj["reason"], dict):
+            short_status = status_obj["reason"].get("short", "")
+
+            # Determine match state
+            if short_status.lower() in ("ft", "fulltime", "finished"):
+                status = "finished"
+                if not match_time_display:
+                    match_time_display = "FT"
+            elif short_status.lower() in ("ht", "halftime"):
+                status = "live"
+                # Only use "HT" if we don't have an actual minute
+                if not match_time_display:
+                    match_time_display = "HT"
+            elif short_status:
+                status = "live"
+            else:
+                status = "upcoming"
+        # Fallback to finished/started boolean flags
+        elif status_obj.get("finished"):
+            status = "finished"
+            if not match_time_display:
+                match_time_display = "FT"
+        elif status_obj.get("started"):
+            status = "live"
+        else:
+            status = "upcoming"
 
         # Try multiple fields for start time
         start_time_str = status_obj.get("utcTime") or status_obj.get("startTimeUtc")
@@ -447,6 +478,7 @@ class FotMobClient:
             league_id=league_id,
             league_name=league_name,
             page_slug=data.get("pageUrl"),
+            match_time_display=match_time_display,
         )
         if match.page_slug:
             self._page_slugs[match.id] = match.page_slug
@@ -674,7 +706,7 @@ class FotMobClient:
         )
 
     def _parse_match_details_from_page(
-        self, page_props: dict, broadcast_channels_data: list = None
+        self, page_props: dict, broadcast_channels_data: list | None = None
     ) -> MatchDetails | None:
         """Parse match details from scraped page props."""
         details = self._parse_match_details_from_api(page_props)

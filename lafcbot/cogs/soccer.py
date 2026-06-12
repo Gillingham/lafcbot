@@ -170,7 +170,12 @@ class SoccerCog(commands.Cog):
                     if away_flag:
                         away_name = f"{away_flag} {away_name}"
 
-                lines.append(f"{status_emoji} {home_name} {score} {away_name}")
+                # Add match time for live matches
+                match_line = f"{status_emoji} {home_name} {score} {away_name}"
+                if match.is_live and match.match_time_display:
+                    match_line += f" ({match.match_time_display})"
+
+                lines.append(match_line)
 
             # Display upcoming matches with detailed info (limit to 5 for venue/broadcast lookup)
             for match in upcoming[:5]:

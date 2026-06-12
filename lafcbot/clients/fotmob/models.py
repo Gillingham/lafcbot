@@ -54,6 +54,7 @@ class Match:
     league_name: str | None = None
     page_slug: str | None = None  # URL slug for match page
     venue: Venue | None = None
+    match_time_display: str | None = None  # Display string like "45'+2" or "HT"
 
     @property
     def is_live(self) -> bool:
