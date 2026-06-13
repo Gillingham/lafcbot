@@ -637,12 +637,44 @@ class FotMobClient:
         Returns:
             Dictionary with standings data, or None if fetch failed
         """
-        endpoint = f"/api/leagues?leagueId={league_id}"
-        data = await self._fetch_api_endpoint(endpoint)
+        # Try authenticated endpoint first (like matchDetails)
+        api_path = f"/api/leagues?id={league_id}&tab=table"
+        url = f"{BASE_URL}{api_path}"
 
-        if data:
-            return data.get("table", {})
+        # Generate authentication token
+        xmas_token = generate_xmas_token(api_path)
 
+        # Build headers with authentication
+        headers = HEADERS.copy()
+        headers["x-mas"] = xmas_token
+        headers["Referer"] = f"{BASE_URL}/leagues/{league_id}"
+
+        await self._rate_limit()
+
+        try:
+            if self._session is None:
+                connector = aiohttp.TCPConnector(
+                    limit=CONNECTION_POOL_SIZE,
+                    limit_per_host=CONNECTION_POOL_PER_HOST,
+                    ttl_dns_cache=300,
+                    keepalive_timeout=CONNECTION_KEEPALIVE_TIMEOUT,
+                )
+                self._session = aiohttp.ClientSession(connector=connector)
+
+            async with self._session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data:
+                        return data.get("table", {})
+                elif response.status != 404:
+                    logger.warning(
+                        f"Request to {url} returned status {response.status}"
+                    )
+        except Exception as e:
+            logger.error(f"Error fetching authenticated standings: {e}")
+
+        # Fallback to page scraping
+        logger.debug(f"Falling back to page scraping for league {league_id} standings")
         html = await self._fetch_page_html(f"/leagues/{league_id}")
         if html:
             page_props = extract_page_props(html)

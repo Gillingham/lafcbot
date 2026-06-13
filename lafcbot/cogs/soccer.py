@@ -353,9 +353,9 @@ class SoccerCog(commands.Cog):
                 await ctx.send(f"No standings tables found for {league_display}")
                 return
 
-            # Format standings for each table (e.g., Eastern/Western for MLS)
-            responses = []
-            for table in tables[:2]:  # Limit to 2 tables to avoid message length issues
+            # Format standings for each table (e.g., Eastern/Western for MLS, Groups for World Cup)
+            all_tables = []
+            for table in tables:  # Show all tables
                 table_name = table.get("leagueName", "Standings")
                 table_data = table.get("table", {}).get("all", [])
 
@@ -370,7 +370,7 @@ class SoccerCog(commands.Cog):
                 )
                 lines.append("-" * 50)
 
-                # Teams (top 10)
+                # Teams (top 10 or all for small groups)
                 for team in table_data[:10]:
                     pos = team.get("idx", 0)
                     name = team.get("shortName", team.get("name", "Unknown"))
@@ -387,11 +387,28 @@ class SoccerCog(commands.Cog):
                     )
 
                 lines.append("```")
-                responses.append("\n".join(lines))
+                all_tables.append("\n".join(lines))
 
-            # Send each table as a separate message
-            for response in responses:
-                await ctx.send(response)
+            # Batch tables into messages that fit Discord's 2000 char limit
+            current_batch = []
+            current_length = 0
+
+            for table_text in all_tables:
+                table_length = len(table_text) + 1  # +1 for newline separator
+
+                # If adding this table would exceed limit, send current batch
+                if current_length + table_length > 1900:  # Leave some buffer
+                    if current_batch:
+                        await ctx.send("\n".join(current_batch))
+                    current_batch = [table_text]
+                    current_length = table_length
+                else:
+                    current_batch.append(table_text)
+                    current_length += table_length
+
+            # Send remaining batch
+            if current_batch:
+                await ctx.send("\n".join(current_batch))
 
         except Exception as e:
             import traceback
