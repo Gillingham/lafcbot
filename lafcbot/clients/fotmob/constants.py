@@ -42,3 +42,8 @@ LEAGUE_ALIASES = {
 REQUEST_DELAY = 0.5
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
+
+# Connection pooling settings (matching golazo's configuration)
+CONNECTION_POOL_SIZE = 30  # Total connections
+CONNECTION_POOL_PER_HOST = 30  # Connections per host
+CONNECTION_KEEPALIVE_TIMEOUT = 90  # seconds

@@ -10,7 +10,16 @@ from datetime import date, datetime
 
 import aiohttp
 
-from .constants import BASE_URL, HEADERS, MAX_RETRIES, REQUEST_DELAY, RETRY_DELAY
+from .constants import (
+    BASE_URL,
+    CONNECTION_KEEPALIVE_TIMEOUT,
+    CONNECTION_POOL_PER_HOST,
+    CONNECTION_POOL_SIZE,
+    HEADERS,
+    MAX_RETRIES,
+    REQUEST_DELAY,
+    RETRY_DELAY,
+)
 from .models import (
     BroadcastChannel,
     Highlight,
@@ -170,7 +179,17 @@ class FotMobClient:
 
     async def __aenter__(self):
         if self._session is None:
-            self._session = aiohttp.ClientSession(headers=HEADERS)
+            # Configure connection pooling (matching golazo's settings)
+            connector = aiohttp.TCPConnector(
+                limit=CONNECTION_POOL_SIZE,  # Total connection pool size
+                limit_per_host=CONNECTION_POOL_PER_HOST,  # Per-host limit
+                ttl_dns_cache=300,  # DNS cache for 5 minutes
+                keepalive_timeout=CONNECTION_KEEPALIVE_TIMEOUT,  # Keep connections alive
+            )
+            self._session = aiohttp.ClientSession(
+                headers=HEADERS,
+                connector=connector,
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -205,7 +224,17 @@ class FotMobClient:
             The response body as bytes, or None if all retries failed
         """
         if self._session is None:
-            self._session = aiohttp.ClientSession(headers=HEADERS)
+            # Configure connection pooling
+            connector = aiohttp.TCPConnector(
+                limit=CONNECTION_POOL_SIZE,
+                limit_per_host=CONNECTION_POOL_PER_HOST,
+                ttl_dns_cache=300,
+                keepalive_timeout=CONNECTION_KEEPALIVE_TIMEOUT,
+            )
+            self._session = aiohttp.ClientSession(
+                headers=HEADERS,
+                connector=connector,
+            )
             self._owns_session = True
 
         request_headers = HEADERS.copy()
@@ -376,7 +405,17 @@ class FotMobClient:
 
         try:
             if self._session is None:
-                self._session = aiohttp.ClientSession(headers=HEADERS)
+                # Configure connection pooling
+                connector = aiohttp.TCPConnector(
+                    limit=CONNECTION_POOL_SIZE,
+                    limit_per_host=CONNECTION_POOL_PER_HOST,
+                    ttl_dns_cache=300,
+                    keepalive_timeout=CONNECTION_KEEPALIVE_TIMEOUT,
+                )
+                self._session = aiohttp.ClientSession(
+                    headers=HEADERS,
+                    connector=connector,
+                )
                 self._owns_session = True
 
             async with self._session.get(url, headers=headers) as response:
