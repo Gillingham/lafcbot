@@ -637,7 +637,12 @@ class WorldCupTask:
                 # Populate last_events with ALL current events so we don't notify
                 # about events that already occurred before we started monitoring
                 initial_events = [
-                    {"id": e.id, "type": e.type, "minute": e.minute}
+                    {
+                        "id": e.id,
+                        "type": e.type,
+                        "minute": e.minute,
+                        "half_type": e.half_type,
+                    }
                     for e in details.events
                     if not self._is_half_event(e)
                 ]
@@ -698,7 +703,13 @@ class WorldCupTask:
 
             # Update state
             state["last_events"] = [
-                {"id": e.id, "type": e.type, "minute": e.minute} for e in details.events
+                {
+                    "id": e.id,
+                    "type": e.type,
+                    "minute": e.minute,
+                    "half_type": e.half_type,  # Include half_type for proper HT/FT distinction
+                }
+                for e in details.events
             ]
             state["last_home_score"] = match.home_score or 0
             state["last_away_score"] = match.away_score or 0
@@ -942,11 +953,18 @@ class WorldCupTask:
         if not notifications_config.get("half_events", True):
             return
 
-        old_event_ids = {e["id"] for e in state["last_events"]}
+        # For half-events, use composite key (minute, half_type) since they all have id=0
+        # This allows us to distinguish HT (minute 45) from FT (minute 90)
+        old_half_events = {
+            (e["minute"], e.get("half_type"))
+            for e in state["last_events"]
+            if e["type"].lower() == "half"
+        }
+
         new_half_events = [
             e
             for e in details.events
-            if e.id not in old_event_ids and self._is_half_event(e)
+            if self._is_half_event(e) and (e.minute, e.half_type) not in old_half_events
         ]
 
         logger.debug(f"Checking half events: {len(new_half_events)} new half event(s)")
