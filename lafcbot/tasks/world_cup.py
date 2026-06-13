@@ -110,6 +110,13 @@ def get_country_flag(country_name: str) -> str:
     return flag
 
 
+def format_minute(event) -> str:
+    """Format minute display with added time if present."""
+    if event.added_time:
+        return f"{event.minute}+{event.added_time}'"
+    return f"{event.minute}'"
+
+
 class WorldCupTask:
     """Handles daily World Cup match updates and live monitoring."""
 
@@ -144,6 +151,7 @@ class WorldCupTask:
         self.next_check_time = None
         self.monitoring_active = False
         self.live_match_ids = set()
+        self.empty_polls_count = 0  # Track consecutive polls with no live matches
 
         # State tracking for monitored matches
         # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}
@@ -574,12 +582,33 @@ class WorldCupTask:
                 await self._check_finished_matches()
 
                 if not live_matches:
-                    # No more live matches, stop monitoring
-                    logger.info("No more live matches, stopping game monitor")
-                    self.monitoring_active = False
-                    self.live_match_ids.clear()
-                    game_monitor.cancel()
-                    return
+                    # No more live matches - but keep polling for a few iterations
+                    # to ensure we catch match summaries for recently finished matches
+                    self.empty_polls_count += 1
+
+                    # Keep polling for 3 more iterations after no live matches detected
+                    # This gives ~3 minutes (3 x 60s) to detect finished matches
+                    if self.empty_polls_count >= 3 and not self.monitored_matches:
+                        # No live matches AND no monitored matches left, stop monitoring
+                        logger.info(
+                            f"No more live matches after {self.empty_polls_count} polls and "
+                            f"no monitored matches remaining, stopping game monitor"
+                        )
+                        self.monitoring_active = False
+                        self.live_match_ids.clear()
+                        self.empty_polls_count = 0
+                        game_monitor.cancel()
+                        return
+                    else:
+                        logger.info(
+                            f"No live matches found (poll #{self.empty_polls_count}/3), "
+                            f"but {len(self.monitored_matches)} match(es) still being monitored for finish status"
+                        )
+                        # Skip the rest and wait for next iteration
+                        return
+                else:
+                    # Reset counter when we find live matches
+                    self.empty_polls_count = 0
 
                 # Find live monitoring channel
                 channel_name = live_config.get("channel_name", "world-cup-live")
@@ -643,6 +672,7 @@ class WorldCupTask:
                         "id": e.id,
                         "type": e.type,
                         "minute": e.minute,
+                        "added_time": e.added_time,  # For added time distinction
                         "half_type": e.half_type,  # For HT/FT distinction
                         "team_id": e.team_id,  # For substitution distinction
                         "player_name": e.player_name,  # For substitution distinction
@@ -710,6 +740,7 @@ class WorldCupTask:
                     "id": e.id,
                     "type": e.type,
                     "minute": e.minute,
+                    "added_time": e.added_time,  # For added time distinction
                     "half_type": e.half_type,  # For HT/FT distinction
                     "team_id": e.team_id,  # For substitution distinction
                     "player_name": e.player_name,  # For substitution distinction
@@ -912,9 +943,9 @@ class WorldCupTask:
             return
 
         # Substitutions have null eventId (parsed as id=0), so use composite key
-        # to distinguish multiple subs: (minute, team_id, player_out)
+        # to distinguish multiple subs: (minute, added_time, team_id, player_out)
         old_subs = {
-            (e["minute"], e.get("team_id"), e.get("player_name"))
+            (e["minute"], e.get("added_time"), e.get("team_id"), e.get("player_name"))
             for e in state["last_events"]
             if e["type"].lower() == "substitution"
         }
@@ -923,7 +954,7 @@ class WorldCupTask:
             e
             for e in details.events
             if self._is_substitution_event(e)
-            and (e.minute, e.team_id, e.player_name) not in old_subs
+            and (e.minute, e.added_time, e.team_id, e.player_name) not in old_subs
         ]
 
         logger.debug(
@@ -945,16 +976,16 @@ class WorldCupTask:
 
         player_out = sub_event.player_name or "Unknown"
         player_in = getattr(sub_event, "assist_name", None)
-        minute = sub_event.minute
+        minute_display = format_minute(sub_event)
 
         team_name = home_team if sub_event.team_id == match.home_team.id else away_team
         team_flag = home_flag if sub_event.team_id == match.home_team.id else away_flag
 
         emoji = "🔁"
         if player_in:
-            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute}'"
+            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute_display}"
         else:
-            message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute}'"
+            message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute_display}"
 
         await channel.send(message)
 
@@ -1042,13 +1073,11 @@ class WorldCupTask:
         card_title = "Red Card" if card_color == "red" else "Yellow Card"
 
         player = card_event.player_name or "Unknown"
-        minute = card_event.minute
+        minute_display = format_minute(card_event)
         team_name = home_team if card_event.team_id == match.home_team.id else away_team
         team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
 
-        message = (
-            f"{emoji} **{card_title}:** {player} {minute}' for {team_flag} {team_name}"
-        )
+        message = f"{emoji} **{card_title}:** {player} {minute_display} for {team_flag} {team_name}"
         if card_event.description:
             description = card_event.description.strip()
             if description.lower() not in {"yellow card", "red card"}:
@@ -1073,7 +1102,7 @@ class WorldCupTask:
 
         # Build message
         scorer = goal_event.player_name or "Unknown"
-        minute = goal_event.minute
+        minute_display = format_minute(goal_event)
 
         # Get current score directly from match object
         home_goals = match.home_score or 0
@@ -1086,9 +1115,9 @@ class WorldCupTask:
         message = f"⚽ **GOAL!** {score_line}\n\n"
 
         if goal_event.own_goal:
-            message += f"**Own Goal:** {scorer} {minute}'"
+            message += f"**Own Goal:** {scorer} {minute_display}"
         else:
-            message += f"**Scorer:** {scorer} {minute}'"
+            message += f"**Scorer:** {scorer} {minute_display}"
             if goal_event.assist_name:
                 message += f"\n**Assist:** {goal_event.assist_name}"
 
@@ -1106,7 +1135,7 @@ class WorldCupTask:
                     sent_msg,
                     home_team,
                     away_team,
-                    minute,
+                    goal_event.minute,
                     match.start_time,
                     scoring_team,
                     home_goals,
@@ -1229,6 +1258,9 @@ class WorldCupTask:
                 )
 
                 if details and details.match.is_finished:
+                    logger.info(
+                        f"Match {details.match.home_team.name} vs {details.match.away_team.name} finished, sending summary"
+                    )
                     # Mark summary as sent BEFORE calling _send_match_summary to prevent
                     # duplicates if the match is checked again before dict deletion
                     state["summary_sent"] = True
@@ -1238,6 +1270,11 @@ class WorldCupTask:
 
                     # Remove from monitoring
                     del self.monitored_matches[match_id]
+                elif details:
+                    logger.debug(
+                        f"Match {details.match.home_team.name} vs {details.match.away_team.name} "
+                        f"not finished yet (status: {details.match.status})"
+                    )
 
             except Exception as e:
                 logger.error(f"Error checking finished match {match_id}: {e}")
@@ -1254,8 +1291,14 @@ class WorldCupTask:
 
             # Find the last event minute to estimate when the match actually ended
             # FotMob includes Half events with "FT" (full time) which mark the end
+            # Include added time for accurate calculation (e.g., 90+5 = 95 minutes)
             last_event_minute = max(
-                (e.minute for e in details.events if e.minute is not None), default=90
+                (
+                    e.minute + (e.added_time or 0)
+                    for e in details.events
+                    if e.minute is not None
+                ),
+                default=90,
             )
 
             # Add buffer for post-match activities (typically 5-10 minutes after last event)
@@ -1309,8 +1352,8 @@ class WorldCupTask:
             lines.append("**⚽ Goals:**")
             for goal in goal_events:
                 scorer = goal.player_name or "Unknown"
-                minute = goal.minute
-                goal_line = f"{minute}' - {scorer}"
+                minute_display = format_minute(goal)
+                goal_line = f"{minute_display} - {scorer}"
 
                 if goal.own_goal:
                     goal_line += " (OG)"

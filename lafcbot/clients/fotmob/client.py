@@ -977,6 +977,7 @@ class FotMobClient:
                     id=event_data.get("eventId", event_data.get("id", 0)),
                     type=event_type,
                     minute=event_data.get("time", 0),
+                    added_time=event_data.get("overloadTime"),
                     team_id=team_id,
                     player_name=(
                         player_out

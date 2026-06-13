@@ -21,6 +21,7 @@ class MatchEvent:
     type: str  # "goal", "card", "substitution", etc.
     minute: int
     team_id: int
+    added_time: int | None = None  # Added/injury time (e.g., 5 for "90+5'")
     player_name: str | None = None
     assist_name: str | None = None  # Assist player for goals
     description: str | None = None
