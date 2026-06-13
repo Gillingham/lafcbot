@@ -1,6 +1,6 @@
 """Soccer-related Discord commands for match information and standings."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from discord.ext import commands
@@ -38,13 +38,16 @@ class SoccerCog(commands.Cog):
         """
         Show matches for a league.
 
-        Usage: !matches [league]
+        Usage: !matches [league] [tomorrow]
         If no league is specified, uses the league configured for this channel.
+        Add "tomorrow" to show tomorrow's matches instead of today's.
 
         Examples:
           !matches                # Uses channel-configured league or MLS default
           !matches mls
           !matches World Cup
+          !matches World Cup tomorrow
+          !matches tomorrow       # Tomorrow's matches for channel-configured league
           !matches Premier
           !matches Champions
         """
@@ -53,6 +56,15 @@ class SoccerCog(commands.Cog):
                 "FotMob client not initialized. Please wait for bot to fully start."
             )
             return
+
+        # Check if "tomorrow" is in the league parameter
+        show_tomorrow = False
+        if league and "tomorrow" in league.lower():
+            show_tomorrow = True
+            # Remove "tomorrow" from league string
+            league = league.lower().replace("tomorrow", "").strip()
+            if not league:
+                league = None
 
         # Determine league to use
         if league is None:
@@ -90,35 +102,40 @@ class SoccerCog(commands.Cog):
             # Get today's date in Los Angeles timezone
             la_tz = ZoneInfo("America/Los_Angeles")
             today_la = datetime.now(la_tz).date()
+            tomorrow_la = today_la + timedelta(days=1)
 
-            # Filter matches to only those from today (in LA time)
-            todays_matches = []
+            # Determine target date based on show_tomorrow flag
+            target_date = tomorrow_la if show_tomorrow else today_la
+
+            # Filter matches for the target date
+            target_matches = []
             upcoming_by_date = {}
 
             for m in league_matches:
-                if m.is_live:
-                    todays_matches.append(m)
+                if not show_tomorrow and m.is_live:
+                    # Only include live matches when showing today
+                    target_matches.append(m)
                 elif m.is_finished and m.start_time:
                     # Convert to LA timezone for date comparison
                     match_time_la = m.start_time.astimezone(la_tz)
-                    if match_time_la.date() == today_la:
-                        todays_matches.append(m)
+                    if match_time_la.date() == target_date:
+                        target_matches.append(m)
                 elif not m.is_finished and m.start_time:
                     # Group upcoming matches by date
                     match_time_la = m.start_time.astimezone(la_tz)
                     match_date = match_time_la.date()
-                    if match_date == today_la:
-                        todays_matches.append(m)
+                    if match_date == target_date:
+                        target_matches.append(m)
                     else:
                         if match_date not in upcoming_by_date:
                             upcoming_by_date[match_date] = []
                         upcoming_by_date[match_date].append(m)
 
             # Determine which matches to show
-            if todays_matches:
-                # Show today's matches
-                matches_to_display = todays_matches
-                display_date = today_la
+            if target_matches:
+                # Show target date's matches
+                matches_to_display = target_matches
+                display_date = target_date
             elif upcoming_by_date:
                 # Show next day that has matches
                 next_date = min(upcoming_by_date.keys())
@@ -136,6 +153,8 @@ class SoccerCog(commands.Cog):
             # Determine header based on what we're showing
             if display_date == today_la:
                 date_header = "Today's Matches"
+            elif display_date == tomorrow_la:
+                date_header = "Tomorrow's Matches"
             else:
                 date_str = display_date.strftime("%A, %b %d")
                 date_header = f"Next Matches - {date_str}"
