@@ -25,6 +25,9 @@
       "fallback_check_hours": 12,
       "notifications": {
         "goals": true,
+        "cards": true,
+        "substitutions": true,
+        "half_events": true,
         "extra_time": true,
         "penalties": true,
         "include_reddit_clips": true

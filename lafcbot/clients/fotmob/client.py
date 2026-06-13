@@ -960,12 +960,24 @@ class FotMobClient:
             if own_goal_flag is None:
                 own_goal_flag = event_data.get("ownGoal", False)
 
+            # Determine team_id - if teamId is null/0, use isHome to infer it
+            team_id = event_data.get("teamId")
+            if not team_id or team_id == 0:
+                # Use isHome field to determine team
+                is_home = event_data.get("isHome")
+                if is_home is True:
+                    team_id = home_team.id
+                elif is_home is False:
+                    team_id = away_team.id
+                else:
+                    team_id = 0  # Fallback if isHome is also missing
+
             events.append(
                 MatchEvent(
                     id=event_data.get("eventId", event_data.get("id", 0)),
                     type=event_type,
                     minute=event_data.get("time", 0),
-                    team_id=event_data.get("teamId", 0),
+                    team_id=team_id,
                     player_name=(
                         player_out
                         if player_out
