@@ -1,9 +1,11 @@
 """FotMob API client for fetching match and league data."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
+from base64 import b64encode
 from datetime import date, datetime
 
 import aiohttp
@@ -22,6 +24,125 @@ from .models import (
 from .parser import extract_broadcast_channels, extract_page_props
 
 logger = logging.getLogger(__name__)
+
+# FotMob's authentication secret - "Three Lions (Football's Coming Home)" lyrics
+FOTMOB_SECRET = """[Spoken Intro: Alan Hansen & Trevor Brooking]
+I think it's bad news for the English game
+We're not creative enough, and we're not positive enough
+
+[Refrain: Ian Broudie & Jimmy Hill]
+It's coming home, it's coming home, it's coming
+Football's coming home (We'll go on getting bad results)
+It's coming home, it's coming home, it's coming
+Football's coming home
+It's coming home, it's coming home, it's coming
+Football's coming home
+It's coming home, it's coming home, it's coming
+Football's coming home
+
+[Verse 1: Frank Skinner]
+Everyone seems to know the score, they've seen it all before
+They just know, they're so sure
+That England's gonna throw it away, gonna blow it away
+But I know they can play, 'cause I remember
+
+[Chorus: All]
+Three lions on a shirt
+Jules Rimet still gleaming
+Thirty years of hurt
+Never stopped me dreaming
+
+[Verse 2: David Baddiel]
+So many jokes, so many sneers
+But all those "Oh, so near"s wear you down through the years
+But I still see that tackle by Moore and when Lineker scored
+Bobby belting the ball, and Nobby dancing
+
+[Chorus: All]
+Three lions on a shirt
+Jules Rimet still gleaming
+Thirty years of hurt
+Never stopped me dreaming
+
+[Bridge]
+England have done it, in the last minute of extra time!
+What a save, Gordon Banks!
+Good old England, England that couldn't play football!
+England have got it in the bag!
+I know that was then, but it could be again
+
+[Refrain: Ian Broudie]
+It's coming home, it's coming
+Football's coming home
+It's coming home, it's coming home, it's coming
+Football's coming home
+(England have done it!)
+It's coming home, it's coming home, it's coming
+Football's coming home
+It's coming home, it's coming home, it's coming
+Football's coming home
+[Chorus: All]
+(It's coming home) Three lions on a shirt
+(It's coming home, it's coming) Jules Rimet still gleaming
+(Football's coming home
+It's coming home) Thirty years of hurt
+(It's coming home, it's coming) Never stopped me dreaming
+(Football's coming home
+It's coming home) Three lions on a shirt
+(It's coming home, it's coming) Jules Rimet still gleaming
+(Football's coming home
+It's coming home) Thirty years of hurt
+(It's coming home, it's coming) Never stopped me dreaming
+(Football's coming home
+It's coming home) Three lions on a shirt
+(It's coming home, it's coming) Jules Rimet still gleaming
+(Football's coming home
+It's coming home) Thirty years of hurt
+(It's coming home, it's coming) Never stopped me dreaming
+(Football's coming home)"""
+
+
+def generate_xmas_token(api_path: str) -> str:
+    """
+    Generate FotMob's x-mas authentication token.
+
+    This token is required for the authenticated /api/data/* endpoints
+    and may provide fresher data with better cache-busting.
+
+    Args:
+        api_path: The API path (e.g., "/api/data/matchDetails?matchId=123")
+
+    Returns:
+        Base64-encoded authentication token
+    """
+    # Current timestamp in milliseconds
+    timestamp_code = int(time.time() * 1000)
+
+    # Build body structure
+    body = {
+        "url": api_path,
+        "code": timestamp_code,
+        "foo": "production:33324f727a7a2706a154eab6f683920b1df36aee",
+    }
+
+    # Create JSON string (compact format, no spaces)
+    body_json = json.dumps(body, separators=(",", ":"))
+
+    # Calculate MD5 signature: MD5(json_body + secret_lyrics)
+    combined = body_json + FOTMOB_SECRET
+    md5_hash = hashlib.md5(combined.encode()).hexdigest().upper()
+
+    # Build final token structure
+    token_data = {
+        "body": body,
+        "signature": md5_hash,
+    }
+
+    # Encode as base64
+    token_json = json.dumps(token_data, separators=(",", ":"))
+    token = b64encode(token_json.encode()).decode()
+
+    return token
 
 
 class FotMobClient:
@@ -45,6 +166,7 @@ class FotMobClient:
         self._last_request_time = 0.0
         self._page_slugs: dict[int, str] = {}
         self._match_details_cache: dict[int, tuple[float, MatchDetails]] = {}
+        self._etag_cache: dict[int, str] = {}  # For HTTP caching with authenticated API
 
     async def __aenter__(self):
         if self._session is None:
@@ -209,6 +331,108 @@ class FotMobClient:
             return []
 
         return self._parse_matches_from_api(data)
+
+    async def get_match_details_authenticated(
+        self,
+        match_id: int,
+        force_refresh: bool = False,
+    ) -> MatchDetails | None:
+        """
+        Get detailed match information using FotMob's authenticated API endpoint.
+
+        This uses the same endpoint as FotMob's web frontend with x-mas authentication,
+        which may provide fresher data and better cache-busting than the legacy endpoints.
+
+        Args:
+            match_id: Match ID
+            force_refresh: If True, bypass internal cache (still sends ETag for HTTP caching)
+
+        Returns:
+            MatchDetails object, or None if fetch failed
+        """
+        if not force_refresh and match_id in self._match_details_cache:
+            timestamp, details = self._match_details_cache[match_id]
+            if asyncio.get_event_loop().time() - timestamp < 30:
+                logger.debug(f"Returning cached details for match {match_id}")
+                return details
+
+        # Build authenticated API path
+        api_path = f"/api/data/matchDetails?matchId={match_id}"
+        url = f"{BASE_URL}{api_path}"
+
+        # Generate authentication token
+        xmas_token = generate_xmas_token(api_path)
+
+        # Build headers with authentication
+        headers = HEADERS.copy()
+        headers["x-mas"] = xmas_token
+        headers["Referer"] = f"{BASE_URL}/matches/{match_id}"
+
+        # Add ETag for HTTP caching (304 Not Modified responses)
+        if match_id in self._etag_cache:
+            headers["If-None-Match"] = self._etag_cache[match_id]
+
+        await self._rate_limit()
+
+        try:
+            if self._session is None:
+                self._session = aiohttp.ClientSession(headers=HEADERS)
+                self._owns_session = True
+
+            async with self._session.get(url, headers=headers) as response:
+                # Handle 304 Not Modified - data unchanged since last request
+                if response.status == 304:
+                    logger.debug(
+                        f"Match {match_id} not modified (304), using cached data"
+                    )
+                    if match_id in self._match_details_cache:
+                        return self._match_details_cache[match_id][1]
+                    # No cached data but got 304? Fall back to regular method
+                    logger.warning(f"Got 304 for match {match_id} but no cached data")
+                    return await self.get_match_details(
+                        match_id=match_id, force_refresh=True
+                    )
+
+                if response.status == 200:
+                    # Store ETag for next request
+                    if "ETag" in response.headers:
+                        self._etag_cache[match_id] = response.headers["ETag"]
+                        logger.debug(f"Stored ETag for match {match_id}")
+
+                    data = await response.json()
+
+                    # Parse match details
+                    details = self._parse_match_details_from_api(data)
+
+                    if details and match_id:
+                        # Update cache
+                        self._match_details_cache[match_id] = (
+                            asyncio.get_event_loop().time(),
+                            details,
+                        )
+
+                    return details
+                elif response.status == 403 or response.status == 401:
+                    logger.warning(
+                        f"Authentication failed for match {match_id} (status {response.status}), "
+                        "falling back to unauthenticated method"
+                    )
+                    return await self.get_match_details(
+                        match_id=match_id, force_refresh=force_refresh
+                    )
+                else:
+                    logger.warning(
+                        f"Authenticated request to {url} returned status {response.status}"
+                    )
+                    return None
+
+        except Exception as e:
+            logger.error(f"Authenticated request to {url} failed: {e}")
+            # Fall back to unauthenticated method on error
+            logger.info(f"Falling back to unauthenticated method for match {match_id}")
+            return await self.get_match_details(
+                match_id=match_id, force_refresh=force_refresh
+            )
 
     async def get_match_details(
         self,

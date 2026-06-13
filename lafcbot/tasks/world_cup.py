@@ -618,8 +618,8 @@ class WorldCupTask:
             channel: Discord channel to send notifications to
         """
         try:
-            # Get detailed match info
-            details = await self.fotmob_client.get_match_details(
+            # Get detailed match info using authenticated endpoint for fresher data
+            details = await self.fotmob_client.get_match_details_authenticated(
                 match_id=match.id, force_refresh=True
             )
             if not details:
