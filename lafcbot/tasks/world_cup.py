@@ -636,15 +636,18 @@ class WorldCupTask:
                 logger.info(f"Starting to monitor match: {match_name}")
                 # Populate last_events with ALL current events so we don't notify
                 # about events that already occurred before we started monitoring
+                # IMPORTANT: Include half-events if match already started, to avoid
+                # sending stale HT/FT notifications when bot starts mid-match
                 initial_events = [
                     {
                         "id": e.id,
                         "type": e.type,
                         "minute": e.minute,
-                        "half_type": e.half_type,
+                        "half_type": e.half_type,  # For HT/FT distinction
+                        "team_id": e.team_id,  # For substitution distinction
+                        "player_name": e.player_name,  # For substitution distinction
                     }
                     for e in details.events
-                    if not self._is_half_event(e)
                 ]
                 self.monitored_matches[match_id] = {
                     "last_events": initial_events,
@@ -707,7 +710,9 @@ class WorldCupTask:
                     "id": e.id,
                     "type": e.type,
                     "minute": e.minute,
-                    "half_type": e.half_type,  # Include half_type for proper HT/FT distinction
+                    "half_type": e.half_type,  # For HT/FT distinction
+                    "team_id": e.team_id,  # For substitution distinction
+                    "player_name": e.player_name,  # For substitution distinction
                 }
                 for e in details.events
             ]
@@ -906,11 +911,19 @@ class WorldCupTask:
         if not notifications_config.get("substitutions", True):
             return
 
-        old_event_ids = {e["id"] for e in state["last_events"]}
+        # Substitutions have null eventId (parsed as id=0), so use composite key
+        # to distinguish multiple subs: (minute, team_id, player_out)
+        old_subs = {
+            (e["minute"], e.get("team_id"), e.get("player_name"))
+            for e in state["last_events"]
+            if e["type"].lower() == "substitution"
+        }
+
         new_subs = [
             e
             for e in details.events
-            if e.id not in old_event_ids and self._is_substitution_event(e)
+            if self._is_substitution_event(e)
+            and (e.minute, e.team_id, e.player_name) not in old_subs
         ]
 
         logger.debug(
