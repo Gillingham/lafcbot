@@ -572,18 +572,50 @@ class FotMobClient:
                 capacity=stadium_data.get("capacity"),
             )
 
+        # Parse scores from general section or header
+        home_score = None
+        away_score = None
+
+        # Try general section first
+        if "homeTeam" in general and "score" in general.get("homeTeam", {}):
+            home_score = general["homeTeam"]["score"]
+        if "awayTeam" in general and "score" in general.get("awayTeam", {}):
+            away_score = general["awayTeam"]["score"]
+
+        # Try header section as fallback
+        if home_score is None or away_score is None:
+            header = data.get("header", {})
+            teams_data = header.get("teams", [])
+            if len(teams_data) >= 2:
+                home_score = teams_data[0].get("score")
+                away_score = teams_data[1].get("score")
+
+        # Parse match time display for live matches
+        match_time_display = None
+        if status == "live":
+            # Try to get from header status
+            header = data.get("header", {})
+            status_obj = header.get("status", {})
+            if isinstance(status_obj, dict):
+                match_time_display = status_obj.get("liveTime", {}).get("short")
+                if not match_time_display:
+                    reason = status_obj.get("reason", {})
+                    if isinstance(reason, dict):
+                        match_time_display = reason.get("short")
+
         match = Match(
             id=int(general.get("matchId", 0)),
             home_team=home_team,
             away_team=away_team,
-            home_score=None,  # Score not in general section
-            away_score=None,
+            home_score=home_score,
+            away_score=away_score,
             status=status,
             start_time=start_time,
             league_id=general.get("parentLeagueId"),
             league_name=general.get("leagueName"),
             page_slug=None,
             venue=venue,
+            match_time_display=match_time_display,
         )
 
         events = []
