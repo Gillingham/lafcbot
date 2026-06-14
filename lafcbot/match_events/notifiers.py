@@ -318,19 +318,21 @@ class MatchNotifier:
 
         await channel.send(message)
 
-    async def notify_match_summary(self, details, stale_threshold):
+    async def notify_match_summary(self, details, stale_threshold, was_monitored=False):
         """
         Send post-match summary with highlights and goal clips.
 
         Args:
             details: MatchDetails object
             stale_threshold: timedelta for checking if match ended too long ago
+            was_monitored: If True, skip staleness check (we were tracking it live)
         """
         live_config = self.config.get("live_monitoring", {})
         channel_name = live_config.get("channel_name", "world-cup-live")
 
         # Check if match ended too long ago to send summary
-        if details.match.start_time and details.events:
+        # Skip this check if we were actively monitoring (we know it just finished for us)
+        if not was_monitored and details.match.start_time and details.events:
             start_time = details.match.start_time.astimezone(self.timezone)
 
             # Find the last event minute to estimate when the match actually ended
@@ -355,6 +357,11 @@ class MatchNotifier:
                     f"threshold: {stale_threshold.total_seconds():.1f}s)"
                 )
                 return
+        elif was_monitored:
+            logger.debug(
+                f"Sending post-match summary for {details.match.home_team.name} vs {details.match.away_team.name} "
+                f"(was actively monitored, skipping staleness check)"
+            )
 
         # Find channel
         channel = None

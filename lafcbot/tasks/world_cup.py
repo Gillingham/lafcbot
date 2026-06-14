@@ -494,12 +494,9 @@ class WorldCupTask:
                             f"Found {len(live_matches)} match(es) in time window (not marked as is_live by API)"
                         )
 
-                # Check for matches that finished before deciding to stop
-                await self._check_finished_matches()
-
                 if not live_matches:
                     # No more live matches - but keep polling for a few iterations
-                    # to ensure we catch match summaries for recently finished matches
+                    # to ensure we catch FT notifications and match summaries
                     self.empty_polls_count += 1
 
                     # Keep polling for 3 more iterations after no live matches detected
@@ -518,10 +515,10 @@ class WorldCupTask:
                     else:
                         logger.info(
                             f"No live matches found (poll #{self.empty_polls_count}/3), "
-                            f"but {len(self.monitored_matches)} match(es) still being monitored for finish status"
+                            f"but {len(self.monitored_matches)} match(es) still being monitored for final events"
                         )
-                        # Skip the rest and wait for next iteration
-                        return
+                        # Continue monitoring tracked matches for FT events and finish status
+                        # even if they're not in live_matches anymore
                 else:
                     # Reset counter when we find live matches
                     self.empty_polls_count = 0
@@ -538,9 +535,25 @@ class WorldCupTask:
                     logger.warning(f"Live channel {channel_name} not found")
                     return
 
-                # Check each live match for new events
-                for match in live_matches:
+                # Build complete list of matches to monitor:
+                # 1. All live matches from API
+                # 2. Matches we're tracking that might not be in live_matches (finishing matches)
+                matches_to_monitor = {m.id: m for m in live_matches}
+
+                # Add any monitored matches not in live_matches (to catch FT events)
+                for match_id in list(self.monitored_matches.keys()):
+                    if match_id not in matches_to_monitor:
+                        # Create minimal match object (only needs .id attribute)
+                        from types import SimpleNamespace
+
+                        matches_to_monitor[match_id] = SimpleNamespace(id=match_id)
+
+                # Check each match for new events
+                for match in matches_to_monitor.values():
                     await self._monitor_match(match, channel)
+
+                # Check for matches that finished after monitoring all events
+                await self._check_finished_matches()
 
             except Exception as e:
                 logger.error(f"Error in game monitor: {e}")
@@ -873,9 +886,10 @@ class WorldCupTask:
                     # duplicates if the match is checked again before dict deletion
                     state["summary_sent"] = True
 
-                    # Match finished, send summary (may skip if stale or channel not found)
+                    # Match finished, send summary
+                    # Pass was_monitored=True since we were actively tracking this match
                     await self.notifier.notify_match_summary(
-                        details, STALE_EVENT_THRESHOLD
+                        details, STALE_EVENT_THRESHOLD, was_monitored=True
                     )
 
                     # Remove from monitoring
