@@ -67,6 +67,7 @@ def get_country_flag(country_name: str) -> str:
         "Jamaica": "JM",
         "Panama": "PA",
         "Honduras": "HN",
+        "Haiti": "HT",  
         # AFC
         "Japan": "JP",
         "South Korea": "KR",
@@ -98,11 +99,15 @@ def get_country_flag(country_name: str) -> str:
     code = country_codes.get(country_name, "")
     if not code:
         return ""
-
-    # Handle special UK countries
-    if code.startswith("GB-"):
-        # For sub-regions, just use GB flag
-        code = "GB"
+#UK Subdivision flags to prevent bot from using UK flags for scotland, english and wales
+SUBDIVISION_FLAGS = {
+    "GB-ENG": "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F",  # England
+    "GB-SCT": "\U0001F3F4\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F",  # Scotland
+    "GB-WLS": "\U0001F3F4\U000E0067\U000E0062\U000E0077\U000E006C\U000E0073\U000E007F",  # Wales
+}
+if code in SUBDIVISION_FLAGS:
+    return SUBDIVISION_FLAGS[code]
+# Northern Ireland has no official Unicode subdivision flag, plus they arent in the WC anyway.
 
     # Convert ISO code to flag emoji
     # Each letter becomes a regional indicator symbol (🇦 = U+1F1E6, etc.)
