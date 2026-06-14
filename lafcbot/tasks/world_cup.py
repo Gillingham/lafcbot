@@ -67,6 +67,7 @@ def get_country_flag(country_name: str) -> str:
         "Jamaica": "JM",
         "Panama": "PA",
         "Honduras": "HN",
+        "Haiti": "HT",  
         # AFC
         "Japan": "JP",
         "South Korea": "KR",
