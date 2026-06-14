@@ -10,141 +10,21 @@ import discord
 from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
+from lafcbot.match_events.detectors import (
+    is_card_event,
+    is_half_event,
+    is_substitution_event,
+    normalize_half_type,
+)
+from lafcbot.match_events.notifiers import MatchNotifier
+from lafcbot.utils.countries import get_country_flag
+from lafcbot.utils.discord_helpers import send_to_channels
 
 # Threshold for considering notifications "stale" (do not send if event/match is older than this)
 # Used for: match start notifications and post-match summaries
 STALE_EVENT_THRESHOLD = timedelta(minutes=10)
 
 logger = logging.getLogger(__name__)
-
-
-def get_country_flag(country_name: str) -> str:
-    """Convert a country name to its flag emoji."""
-    # Map common country names to their ISO 3166-1 alpha-2 codes
-    country_codes = {
-        # UEFA
-        "Germany": "DE",
-        "Spain": "ES",
-        "France": "FR",
-        "Italy": "IT",
-        "England": "GB-ENG",
-        "Portugal": "PT",
-        "Netherlands": "NL",
-        "Belgium": "BE",
-        "Croatia": "HR",
-        "Denmark": "DK",
-        "Switzerland": "CH",
-        "Austria": "AT",
-        "Poland": "PL",
-        "Ukraine": "UA",
-        "Sweden": "SE",
-        "Norway": "NO",
-        "Czech Republic": "CZ",
-        "Czechia": "CZ",
-        "Serbia": "RS",
-        "Turkey": "TR",
-        "Turkiye": "TR",
-        "Greece": "GR",
-        "Scotland": "GB-SCT",
-        "Wales": "GB-WLS",
-        "Ireland": "IE",
-        "Northern Ireland": "GB-NIR",
-        "Bosnia and Herzegovina": "BA",
-        "Albania": "AL",
-        "North Macedonia": "MK",
-        "Slovenia": "SI",
-        "Slovakia": "SK",
-        "Romania": "RO",
-        "Bulgaria": "BG",
-        "Hungary": "HU",
-        "Finland": "FI",
-        "Iceland": "IS",
-        "Israel": "IL",
-        # CONMEBOL
-        "Brazil": "BR",
-        "Argentina": "AR",
-        "Uruguay": "UY",
-        "Colombia": "CO",
-        "Chile": "CL",
-        "Peru": "PE",
-        "Ecuador": "EC",
-        "Paraguay": "PY",
-        "Venezuela": "VE",
-        "Bolivia": "BO",
-        # CONCACAF
-        "USA": "US",
-        "United States": "US",
-        "Mexico": "MX",
-        "Canada": "CA",
-        "Costa Rica": "CR",
-        "Jamaica": "JM",
-        "Panama": "PA",
-        "Honduras": "HN",
-        "Haiti": "HT",
-        "Curaçao": "CW",
-        "Curacao": "CW",
-        "Trinidad and Tobago": "TT",
-        "El Salvador": "SV",
-        "Guatemala": "GT",
-        "Dominican Republic": "DO",
-        "Suriname": "SR",
-        # AFC
-        "Japan": "JP",
-        "South Korea": "KR",
-        "Korea Republic": "KR",
-        "Australia": "AU",
-        "Iran": "IR",
-        "Saudi Arabia": "SA",
-        "Qatar": "QA",
-        "UAE": "AE",
-        "Iraq": "IQ",
-        "China": "CN",
-        "Thailand": "TH",
-        "Jordan": "JO",
-        "Uzbekistan": "UZ",
-        # CAF
-        "Nigeria": "NG",
-        "Senegal": "SN",
-        "Morocco": "MA",
-        "Egypt": "EG",
-        "Ghana": "GH",
-        "Cameroon": "CM",
-        "Algeria": "DZ",
-        "Tunisia": "TN",
-        "South Africa": "ZA",
-        "Ivory Coast": "CI",
-        "Côte d'Ivoire": "CI",
-        "Cape Verde": "CV",
-        "DR Congo": "CD",
-        # OFC
-        "New Zealand": "NZ",
-    }
-
-    code = country_codes.get(country_name, "")
-    if not code:
-        return ""
-
-    # UK Subdivision flags to prevent bot from using UK flags for scotland, english and wales
-    SUBDIVISION_FLAGS = {
-        "GB-ENG": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",  # England
-        "GB-SCT": "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",  # Scotland
-        "GB-WLS": "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f",  # Wales
-    }
-    if code in SUBDIVISION_FLAGS:
-        return SUBDIVISION_FLAGS[code]
-    # Northern Ireland has no official Unicode subdivision flag, plus they arent in the WC anyway.
-
-    # Convert ISO code to flag emoji
-    # Each letter becomes a regional indicator symbol (🇦 = U+1F1E6, etc.)
-    flag = "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code.upper())
-    return flag
-
-
-def format_minute(event) -> str:
-    """Format minute display with added time if present."""
-    if event.added_time:
-        return f"{event.minute}+{event.added_time}'"
-    return f"{event.minute}'"
 
 
 class WorldCupTask:
@@ -176,6 +56,11 @@ class WorldCupTask:
         # Load timezone
         tz_name = self.config.get("timezone", "America/Los_Angeles")
         self.timezone = ZoneInfo(tz_name)
+
+        # Initialize notification handler
+        self.notifier = MatchNotifier(
+            self.bot, self.config, self.timezone, self.reddit_client
+        )
 
         # State tracking for smart scheduling
         self.next_check_time = None
@@ -282,7 +167,8 @@ class WorldCupTask:
                     matches_to_display = upcoming_by_date[next_date]
                     display_date = next_date
                 else:
-                    await self._send_to_channels(
+                    await send_to_channels(
+                        self.bot,
                         "No World Cup matches scheduled.",
                         [regular_channel_name, live_channel_name],
                     )
@@ -376,8 +262,8 @@ class WorldCupTask:
                 live_channel_name = self.config.get("live_monitoring", {}).get(
                     "channel_name", "world-cup-live"
                 )
-                await self._send_to_channels(
-                    response, [regular_channel_name, live_channel_name]
+                await send_to_channels(
+                    self.bot, response, [regular_channel_name, live_channel_name]
                 )
                 print(
                     f"Sent daily World Cup matches to {regular_channel_name} and {live_channel_name}"
@@ -704,7 +590,7 @@ class WorldCupTask:
                         "minute": e.minute,
                         "added_time": e.added_time,  # For added time distinction
                         # Normalize half_type to prevent duplicates when API provides inconsistent values
-                        "half_type": e.half_type or ("FT" if e.minute >= 90 else "HT")
+                        "half_type": normalize_half_type(e)
                         if e.type.lower() == "half"
                         else e.half_type,
                         "team_id": e.team_id,  # For substitution distinction
@@ -751,11 +637,11 @@ class WorldCupTask:
                         state["start_sent"] = True
                     else:
                         logger.info(f"Sending start notification for: {match_name}")
-                        await self._send_match_start_notification(details)
+                        await self.notifier.notify_match_start(details)
                         state["start_sent"] = True
                 else:
                     logger.info(f"Sending start notification for: {match_name}")
-                    await self._send_match_start_notification(details)
+                    await self.notifier.notify_match_start(details)
                     state["start_sent"] = True
 
             # Check for new events (goals, cards, etc.)
@@ -775,7 +661,7 @@ class WorldCupTask:
                     "minute": e.minute,
                     "added_time": e.added_time,  # For added time distinction
                     # Normalize half_type to prevent duplicates when API provides inconsistent values
-                    "half_type": e.half_type or ("FT" if e.minute >= 90 else "HT")
+                    "half_type": normalize_half_type(e)
                     if e.type.lower() == "half"
                     else e.half_type,
                     "team_id": e.team_id,  # For substitution distinction
@@ -789,70 +675,6 @@ class WorldCupTask:
 
         except Exception as e:
             logger.error(f"Error monitoring match {match.id}: {e}")
-
-    async def _send_match_start_notification(self, details):
-        """Send a notification when a World Cup match starts."""
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        kickoff_info = ""
-        if match.start_time:
-            start_time = match.start_time.astimezone(self.timezone)
-            kickoff_info = f"\nKickoff: {start_time.strftime('%b %d, %I:%M %p %Z')}"
-
-        message = (
-            f"🟢 **MATCH STARTED:** {home_flag} {home_team} vs {away_team} {away_flag}"
-            f"{kickoff_info}\n\n"
-            "Live updates are available in the World Cup live channel."
-        )
-
-        regular_channel_name = self.config.get("channel_name", "world-cup-2026")
-        live_channel_name = self.config.get("live_monitoring", {}).get(
-            "channel_name", "world-cup-live"
-        )
-
-        logger.debug(
-            f"Attempting to send start notification to channels: {regular_channel_name}, {live_channel_name}"
-        )
-        await self._send_to_channels(message, [regular_channel_name, live_channel_name])
-        logger.info(f"Match start notification sent for {home_team} vs {away_team}")
-
-    async def _send_to_channels(self, message, channel_names):
-        """Send a message to one or more configured channels."""
-        sent_channel_ids = set()
-        for channel_name in channel_names:
-            if not channel_name:
-                logger.debug("Skipping empty channel name")
-                continue
-
-            channel = self._find_channel_by_name(channel_name)
-            if not channel:
-                logger.warning(f"Channel '{channel_name}' not found in any guild")
-                continue
-
-            if channel.id in sent_channel_ids:
-                logger.debug(
-                    f"Channel {channel_name} already has this message, skipping"
-                )
-                continue
-
-            try:
-                await channel.send(message)
-                sent_channel_ids.add(channel.id)
-                logger.debug(f"Message sent to channel #{channel_name}")
-            except Exception as e:
-                logger.error(f"Failed to send message to channel {channel_name}: {e}")
-
-    def _find_channel_by_name(self, channel_name):
-        """Find a channel object by name across all guilds."""
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name=channel_name)
-            if channel:
-                return channel
-        return None
 
     async def _check_for_goals(self, details, state, channel):
         """Check for new goals and send notifications."""
@@ -877,7 +699,7 @@ class WorldCupTask:
         # event ID is new, we should notify about it.
 
         for goal in new_goals:
-            await self._send_goal_notification(details, goal, channel)
+            await self.notifier.notify_goal(channel, details, goal)
 
     async def _check_for_events(self, details, state, channel):
         """Generic event checker that delegates to specific event handlers."""
@@ -909,9 +731,7 @@ class WorldCupTask:
 
         old_event_ids = {e["id"] for e in state["last_events"]}
         new_cards = [
-            e
-            for e in details.events
-            if e.id not in old_event_ids and self._is_card_event(e)
+            e for e in details.events if e.id not in old_event_ids and is_card_event(e)
         ]
         logger.debug(
             f"Checking cards: {len(new_cards)} new card event(s) out of {len(details.events)} total events"
@@ -920,55 +740,7 @@ class WorldCupTask:
         # Since we initialize last_events with all existing events when monitoring starts,
         # new_cards should only contain truly new events.
         for card in new_cards:
-            await self._send_card_notification(details, card, channel)
-
-    def _is_card_event(self, event):
-        # Prefer explicit card_color if populated by parser
-        card_color = getattr(event, "card_color", None)
-        if card_color:
-            return card_color.lower() in ("yellow", "red")
-
-        # Fall back to event type or description inspection
-        try:
-            if event.type and str(event.type).lower() == "card":
-                return True
-        except Exception:
-            pass
-
-        event_text = f"{event.type or ''} {event.description or ''}".lower()
-        return "card" in event_text and ("yellow" in event_text or "red" in event_text)
-
-    def _get_card_color(self, event):
-        # Use explicit card_color when available
-        card_color = getattr(event, "card_color", None)
-        if card_color:
-            return str(card_color).lower()
-
-        event_text = f"{event.type or ''} {event.description or ''}".lower()
-        if "red" in event_text and "yellow" not in event_text:
-            return "red"
-        if "yellow" in event_text:
-            return "yellow"
-        if "red" in event_text:
-            return "red"
-        return "card"
-
-    def _is_substitution_event(self, event):
-        # Prefer explicit substitution type
-        try:
-            if event.type and str(event.type).lower() in ("substitution", "sub"):
-                return True
-        except Exception:
-            pass
-
-        # If assist_name and player_name are both present and different,
-        # it likely represents a swap (player out and player in)
-        if getattr(event, "assist_name", None) and getattr(event, "player_name", None):
-            return True
-
-        # Fall back to description containing 'on for' or 'sub'
-        event_text = f"{event.type or ''} {event.description or ''}".lower()
-        return "on for" in event_text or "sub" in event_text
+            await self.notifier.notify_card(channel, details, card)
 
     async def _check_for_substitutions(self, details, state, channel):
         """Check for substitutions and send notifications."""
@@ -989,7 +761,7 @@ class WorldCupTask:
         new_subs = [
             e
             for e in details.events
-            if self._is_substitution_event(e)
+            if is_substitution_event(e)
             and (e.minute, e.added_time, e.team_id, e.player_name) not in old_subs
         ]
 
@@ -1000,30 +772,7 @@ class WorldCupTask:
         # Since we initialize last_events with all existing events when monitoring starts,
         # new_subs should only contain truly new events.
         for sub in new_subs:
-            await self._send_substitution_notification(details, sub, channel)
-
-    async def _send_substitution_notification(self, details, sub_event, channel):
-        """Send a substitution notification to Discord."""
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        player_out = sub_event.player_name or "Unknown"
-        player_in = getattr(sub_event, "assist_name", None)
-        minute_display = format_minute(sub_event)
-
-        team_name = home_team if sub_event.team_id == match.home_team.id else away_team
-        team_flag = home_flag if sub_event.team_id == match.home_team.id else away_flag
-
-        emoji = "🔁"
-        if player_in:
-            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute_display}"
-        else:
-            message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute_display}"
-
-        await channel.send(message)
+            await self.notifier.notify_substitution(channel, details, sub)
 
     async def _check_for_half_events(self, details, state, channel):
         """Check for half-time and full-time events."""
@@ -1042,12 +791,12 @@ class WorldCupTask:
         }
 
         # Normalize half_type for deduplication (same logic as when storing events)
-        new_half_events = [e for e in details.events if self._is_half_event(e)]
+        new_half_events = [e for e in details.events if is_half_event(e)]
 
         # Filter out events we've already seen, using normalized half_type
         filtered_new_events = []
         for e in new_half_events:
-            normalized_half_type = e.half_type or ("FT" if e.minute >= 90 else "HT")
+            normalized_half_type = normalize_half_type(e)
             if (e.minute, normalized_half_type) not in old_half_events:
                 filtered_new_events.append(e)
                 logger.debug(
@@ -1067,164 +816,7 @@ class WorldCupTask:
         # Since we initialize last_events with all existing events when monitoring starts,
         # filtered_new_events should only contain truly new events.
         for half_event in filtered_new_events:
-            await self._send_half_event_notification(details, half_event, channel)
-
-    def _is_half_event(self, event):
-        """Check if event is a half-time or full-time event."""
-        try:
-            if event.type and str(event.type).lower() == "half":
-                return True
-            etype = str(event.type or "").lower()
-            # Normalize check for various halftime/fulltime indicators
-            return etype in ("half", "half-time", "ht", "ft", "periodend")
-        except Exception:
-            pass
-        return False
-
-    async def _send_half_event_notification(self, details, half_event, channel):
-        """Send a half-time or full-time notification to Discord."""
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        # Get the half type from the event (HT or FT)
-        half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
-
-        # Get score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        score_line = (
-            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
-        )
-
-        if half_type == "HT":
-            emoji = "⏸️"
-            title = "HALF-TIME"
-        else:
-            emoji = "🏁"
-            title = "FULL-TIME"
-
-        message = f"{emoji} **{title}:** {score_line}"
-
-        await channel.send(message)
-
-    async def _send_card_notification(self, details, card_event, channel):
-        """Send a yellow or red card notification to Discord."""
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        card_color = self._get_card_color(card_event)
-        emoji = "🟥" if card_color == "red" else "🟨"
-        card_title = "Red Card" if card_color == "red" else "Yellow Card"
-
-        player = card_event.player_name or "Unknown"
-        minute_display = format_minute(card_event)
-        team_name = home_team if card_event.team_id == match.home_team.id else away_team
-        team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
-
-        message = f"{emoji} **{card_title}:** {player} {minute_display} for {team_flag} {team_name}"
-
-        await channel.send(message)
-
-    async def _send_goal_notification(self, details, goal_event, channel):
-        """Send a goal notification to Discord."""
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-
-        # Get flags
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        # Determine which team scored
-        scoring_team = (
-            home_team if goal_event.team_id == match.home_team.id else away_team
-        )
-
-        # Build message
-        scorer = goal_event.player_name or "Unknown"
-        minute_display = format_minute(goal_event)
-
-        # Get current score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        score_line = (
-            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
-        )
-
-        message = f"⚽ **GOAL!** {score_line}\n\n"
-
-        if goal_event.own_goal:
-            message += f"**Own Goal:** {scorer} {minute_display}"
-        else:
-            message += f"**Scorer:** {scorer} {minute_display}"
-            if goal_event.assist_name:
-                message += f"\n**Assist:** {goal_event.assist_name}"
-
-        # Send notification
-        sent_msg = await channel.send(message)
-
-        # Try to fetch Reddit clip in background
-        if (
-            self.config.get("live_monitoring", {})
-            .get("notifications", {})
-            .get("include_reddit_clips", True)
-        ):
-            asyncio.create_task(
-                self._add_reddit_clip(
-                    sent_msg,
-                    home_team,
-                    away_team,
-                    goal_event.minute,
-                    match.start_time,
-                    scoring_team,
-                    home_goals,
-                    away_goals,
-                )
-            )
-
-    async def _add_reddit_clip(
-        self,
-        message,
-        home_team,
-        away_team,
-        minute,
-        match_time,
-        scoring_team,
-        home_score,
-        away_score,
-    ):
-        """Try to add Reddit clip link to goal notification."""
-        try:
-            result = await asyncio.wait_for(
-                self.reddit_client.search_goal(
-                    home_team=home_team,
-                    away_team=away_team,
-                    minute=minute,
-                    match_time=match_time,
-                    scoring_team=scoring_team,
-                    home_score=home_score,
-                    away_score=away_score,
-                ),
-                timeout=5.0,
-            )
-
-            if result:
-                # Edit message to add clip link
-                new_content = message.content + f"\n\n🎥 [Replay]({result['post_url']})"
-                await message.edit(content=new_content)
-
-        except TimeoutError:
-            logger.debug(f"Reddit search timed out for goal at {minute}'")
-        except Exception as e:
-            logger.error(f"Failed to add Reddit clip: {e}")
+            await self.notifier.notify_half_event(channel, details, half_event)
 
     async def _check_extra_time(self, details, state, channel):
         """Check for extra time and send notification."""
@@ -1235,22 +827,7 @@ class WorldCupTask:
             return
 
         if details.extra_time and not state["extra_time_sent"]:
-            match = details.match
-            home_team = match.home_team.name
-            away_team = match.away_team.name
-            home_flag = get_country_flag(home_team)
-            away_flag = get_country_flag(away_team)
-
-            # Get scores directly from match object
-            home_goals = match.home_score or 0
-            away_goals = match.away_score or 0
-
-            message = (
-                f"⏱️ **EXTRA TIME:** {home_flag} {home_team} {home_goals}-{away_goals} "
-                f"{away_team} {away_flag}\n\nThe match is going to extra time!"
-            )
-
-            await channel.send(message)
+            await self.notifier.notify_extra_time(channel, details)
             state["extra_time_sent"] = True
 
     async def _check_penalties(self, details, state, channel):
@@ -1262,23 +839,7 @@ class WorldCupTask:
             return
 
         if details.penalties and not state["penalties_sent"]:
-            match = details.match
-            home_team = match.home_team.name
-            away_team = match.away_team.name
-            home_flag = get_country_flag(home_team)
-            away_flag = get_country_flag(away_team)
-
-            # Get regular time scores directly from match object
-            home_goals = match.home_score or 0
-            away_goals = match.away_score or 0
-
-            message = (
-                f"🎯 **PENALTY SHOOTOUT:** {home_flag} {home_team} vs {away_team} {away_flag}\n\n"
-                f"After Extra Time: {home_team} {home_goals}-{away_goals} {away_team}\n"
-                f"The match will be decided on penalties!"
-            )
-
-            await channel.send(message)
+            await self.notifier.notify_penalties(channel, details)
             state["penalties_sent"] = True
 
     async def _check_finished_matches(self):
@@ -1313,7 +874,9 @@ class WorldCupTask:
                     state["summary_sent"] = True
 
                     # Match finished, send summary (may skip if stale or channel not found)
-                    await self._send_match_summary(details)
+                    await self.notifier.notify_match_summary(
+                        details, STALE_EVENT_THRESHOLD
+                    )
 
                     # Remove from monitoring
                     del self.monitored_matches[match_id]
@@ -1325,100 +888,3 @@ class WorldCupTask:
 
             except Exception as e:
                 logger.error(f"Error checking finished match {match_id}: {e}")
-
-    async def _send_match_summary(self, details):
-        """Send post-match summary with highlights and goal clips."""
-        live_config = self.config.get("live_monitoring", {})
-        channel_name = live_config.get("channel_name", "world-cup-live")
-
-        # Check if match ended too long ago to send summary
-        # Use the last event's minute to calculate actual match duration
-        if details.match.start_time and details.events:
-            start_time = details.match.start_time.astimezone(self.timezone)
-
-            # Find the last event minute to estimate when the match actually ended
-            # FotMob includes Half events with "FT" (full time) which mark the end
-            # Include added time for accurate calculation (e.g., 90+5 = 95 minutes)
-            last_event_minute = max(
-                (
-                    e.minute + (e.added_time or 0)
-                    for e in details.events
-                    if e.minute is not None
-                ),
-                default=90,
-            )
-
-            # Add buffer for post-match activities (typically 5-10 minutes after last event)
-            estimated_end_time = start_time + timedelta(minutes=last_event_minute + 10)
-            now = datetime.now(self.timezone)
-            age_since_end = now - estimated_end_time
-
-            if age_since_end > STALE_EVENT_THRESHOLD:
-                logger.info(
-                    f"Skipping post-match summary for {details.match.home_team.name} vs {details.match.away_team.name} "
-                    f"(last event: minute {last_event_minute}, estimated end: {estimated_end_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                    f"now: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}, age since end: {age_since_end.total_seconds():.1f}s, "
-                    f"threshold: {STALE_EVENT_THRESHOLD.total_seconds():.1f}s)"
-                )
-                return
-
-        # Find channel
-        channel = None
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name=channel_name)
-            if channel:
-                break
-
-        if not channel:
-            return
-
-        match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        # Get final score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Build message
-        lines = [
-            f"🏁 **FINAL:** {home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}\n"
-        ]
-
-        # Add penalty result if applicable
-        if details.penalties:
-            lines.append(
-                f"**Penalties:** {home_team} {details.penalties.home_score}-{details.penalties.away_score} {away_team}\n"
-            )
-
-        # Add goals
-        goal_events = [e for e in details.events if e.type.lower() == "goal"]
-        if goal_events:
-            lines.append("**⚽ Goals:**")
-            for goal in goal_events:
-                scorer = goal.player_name or "Unknown"
-                minute_display = format_minute(goal)
-                goal_line = f"{minute_display} - {scorer}"
-
-                if goal.own_goal:
-                    goal_line += " (OG)"
-                elif goal.assist_name:
-                    goal_line += f" ({goal.assist_name})"
-
-                lines.append(goal_line)
-            lines.append("")
-
-        # Add official highlights if available
-        if details.highlight:
-            lines.append(
-                f"📺 **Official Highlights:** [Watch]({details.highlight.url})"
-            )
-
-        message = "\n".join(lines)
-
-        # Send summary
-        await self._send_to_channels(message, [channel_name])
-
-        logger.info(f"Sent post-match summary for {home_team} vs {away_team}")

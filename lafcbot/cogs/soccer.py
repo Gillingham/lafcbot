@@ -8,7 +8,7 @@ from discord.ext import commands
 from lafcbot.bot import load_config
 from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
-from lafcbot.tasks.world_cup import get_country_flag
+from lafcbot.utils.countries import get_country_flag
 
 
 class SoccerCog(commands.Cog):
