@@ -7,3 +7,4 @@ golazo
 lafcbot.egg-info/
 reddit_cache.json
 lafcbot.db
+test_data/
