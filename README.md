@@ -53,6 +53,8 @@ The bot uses `config.json` for settings. Create it in the project root:
 ```json
 {
   "timezone": "America/Los_Angeles",
+  "log_level": "INFO",
+  "match_output_path": null,
   "latepass": {
     "ignored_domains": [
       "tenor.com",
@@ -80,6 +82,9 @@ The bot uses `config.json` for settings. Create it in the project root:
       "fallback_check_hours": 12,
       "notifications": {
         "goals": true,
+        "cards": true,
+        "substitutions": true,
+        "half_events": true,
         "extra_time": true,
         "penalties": true,
         "include_reddit_clips": true
@@ -114,6 +119,20 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
   - Used for time displays across the bot (matches, weather, latepass timestamps)
   - Defaults to "America/Los_Angeles" if not specified
 
+### Debugging Settings
+
+- `log_level`: Controls logging verbosity (optional)
+  - Valid values: `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`
+  - Default: `"INFO"` if not specified
+  - Use `"DEBUG"` for troubleshooting issues
+
+- `match_output_path`: Directory path for match data JSON dumps (optional)
+  - Set to a directory path (e.g., `"test_data"`) to save raw match data from FotMob
+  - Set to `null` or omit to disable (default behavior)
+  - Useful for debugging match parsing issues or analyzing FotMob's data structure
+  - Files are saved as `match_{match_id}_dump.json` in the specified directory
+  - Directory is created automatically if it doesn't exist
+
 ### LatePass Settings
 
 - `latepass.ignored_domains`: Array of domain names to ignore for URL tracking
@@ -134,10 +153,15 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 - `live_monitoring.check_interval_seconds`: How often to check for updates during matches (default: 60)
 - `live_monitoring.pre_match_minutes`: Start monitoring N minutes before kickoff (default: 15)
 - `live_monitoring.fallback_check_hours`: How long to sleep if no matches found (default: 12)
+
+**Notifications:**
 - `notifications.goals`: Enable goal notifications
+- `notifications.cards`: Enable yellow/red card notifications
+- `notifications.substitutions`: Enable player substitution notifications
+- `notifications.half_events`: Enable half-time and full-time notifications
 - `notifications.extra_time`: Enable extra time alerts
 - `notifications.penalties`: Enable penalty shootout alerts
-- `notifications.include_reddit_clips`: Automatically fetch Reddit replay clips
+- `notifications.include_reddit_clips`: Automatically fetch Reddit replay clips for goals
 
 **Highlights:**
 - `highlights.reddit_enabled`: Enable Reddit r/soccer clip searching
