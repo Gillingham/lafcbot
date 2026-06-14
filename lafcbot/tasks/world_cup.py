@@ -1084,10 +1084,6 @@ class WorldCupTask:
         team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
 
         message = f"{emoji} **{card_title}:** {player} {minute_display} for {team_flag} {team_name}"
-        if card_event.description:
-            description = card_event.description.strip()
-            if description.lower() not in {"yellow card", "red card"}:
-                message += f"\n{description}"
 
         await channel.send(message)
 
