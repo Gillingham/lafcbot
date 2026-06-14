@@ -679,7 +679,10 @@ class WorldCupTask:
                         "type": e.type,
                         "minute": e.minute,
                         "added_time": e.added_time,  # For added time distinction
-                        "half_type": e.half_type,  # For HT/FT distinction
+                        # Normalize half_type to prevent duplicates when API provides inconsistent values
+                        "half_type": e.half_type or ("FT" if e.minute >= 90 else "HT")
+                        if e.type.lower() == "half"
+                        else e.half_type,
                         "team_id": e.team_id,  # For substitution distinction
                         "player_name": e.player_name,  # For substitution distinction
                     }
@@ -747,7 +750,10 @@ class WorldCupTask:
                     "type": e.type,
                     "minute": e.minute,
                     "added_time": e.added_time,  # For added time distinction
-                    "half_type": e.half_type,  # For HT/FT distinction
+                    # Normalize half_type to prevent duplicates when API provides inconsistent values
+                    "half_type": e.half_type or ("FT" if e.minute >= 90 else "HT")
+                    if e.type.lower() == "half"
+                    else e.half_type,
                     "team_id": e.team_id,  # For substitution distinction
                     "player_name": e.player_name,  # For substitution distinction
                 }
@@ -1011,17 +1017,32 @@ class WorldCupTask:
             if e["type"].lower() == "half"
         }
 
-        new_half_events = [
-            e
-            for e in details.events
-            if self._is_half_event(e) and (e.minute, e.half_type) not in old_half_events
-        ]
+        # Normalize half_type for deduplication (same logic as when storing events)
+        new_half_events = [e for e in details.events if self._is_half_event(e)]
 
-        logger.debug(f"Checking half events: {len(new_half_events)} new half event(s)")
+        # Filter out events we've already seen, using normalized half_type
+        filtered_new_events = []
+        for e in new_half_events:
+            normalized_half_type = e.half_type or ("FT" if e.minute >= 90 else "HT")
+            if (e.minute, normalized_half_type) not in old_half_events:
+                filtered_new_events.append(e)
+                logger.debug(
+                    f"New half event detected: minute={e.minute}, "
+                    f"half_type={e.half_type} (normalized={normalized_half_type})"
+                )
+            else:
+                logger.debug(
+                    f"Skipping duplicate half event: minute={e.minute}, "
+                    f"half_type={e.half_type} (normalized={normalized_half_type})"
+                )
+
+        logger.debug(
+            f"Checking half events: {len(filtered_new_events)} new half event(s) after deduplication"
+        )
 
         # Since we initialize last_events with all existing events when monitoring starts,
-        # new_half_events should only contain truly new events.
-        for half_event in new_half_events:
+        # filtered_new_events should only contain truly new events.
+        for half_event in filtered_new_events:
             await self._send_half_event_notification(details, half_event, channel)
 
     def _is_half_event(self, event):
