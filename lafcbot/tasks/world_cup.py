@@ -47,6 +47,10 @@ def get_country_flag(country_name: str) -> str:
         "Wales": "GB-WLS",
         "Ireland": "IE",
         "Northern Ireland": "GB-NIR",
+        "Bosnia and Herzegovina": "BA",
+        "Czechia": "CZ",      # alias for "Czech Republic" since that flag wasn't pulling
+        "Türkiye": "TR",      
+        "Turkiye": "TR",      # because FotMob sometimes drops the special character
         # CONMEBOL
         "Brazil": "BR",
         "Argentina": "AR",
@@ -68,6 +72,7 @@ def get_country_flag(country_name: str) -> str:
         "Panama": "PA",
         "Honduras": "HN",
         "Haiti": "HT",
+        "Curacao": "CW",
         # AFC
         "Japan": "JP",
         "South Korea": "KR",
@@ -80,6 +85,8 @@ def get_country_flag(country_name: str) -> str:
         "Iraq": "IQ",
         "China": "CN",
         "Thailand": "TH",
+        "Jordan": "JO",
+        "Uzbekistan": "UZ",
         # CAF
         "Nigeria": "NG",
         "Senegal": "SN",
@@ -92,6 +99,8 @@ def get_country_flag(country_name: str) -> str:
         "South Africa": "ZA",
         "Ivory Coast": "CI",
         "Côte d'Ivoire": "CI",
+        "Cape Verde": "CV",
+        "DR Congo": "CD",
         # OFC
         "New Zealand": "NZ",
     }
