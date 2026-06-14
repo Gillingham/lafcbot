@@ -45,13 +45,17 @@ class MatchNotifier:
         home_flag = get_country_flag(home_team)
         away_flag = get_country_flag(away_team)
 
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
         kickoff_info = ""
         if match.start_time:
             start_time = match.start_time.astimezone(self.timezone)
             kickoff_info = f"\nKickoff: {start_time.strftime('%b %d, %I:%M %p %Z')}"
 
         message = (
-            f"🟢 **MATCH STARTED:** {home_flag} {home_team} vs {away_team} {away_flag}"
+            f"🟢 **MATCH STARTED:** {home_display} vs {away_display}"
             f"{kickoff_info}\n\n"
             "Live updates are available in the World Cup live channel."
         )
@@ -99,9 +103,11 @@ class MatchNotifier:
         home_goals = match.home_score or 0
         away_goals = match.away_score or 0
 
-        score_line = (
-            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
-        )
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
+        score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
         message = f"⚽ **GOAL!** {score_line}\n\n"
 
@@ -192,7 +198,12 @@ class MatchNotifier:
         team_name = home_team if card_event.team_id == match.home_team.id else away_team
         team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
 
-        message = f"{emoji} **{card_title}:** {player} {minute_display} for {team_flag} {team_name}"
+        # Use team name if no flag available
+        team_display = f"{team_flag} {team_name}" if team_flag else team_name
+
+        message = (
+            f"{emoji} **{card_title}:** {player} {minute_display} for {team_display}"
+        )
         if card_event.description:
             description = card_event.description.strip()
             if description.lower() not in {"yellow card", "red card"}:
@@ -222,11 +233,14 @@ class MatchNotifier:
         team_name = home_team if sub_event.team_id == match.home_team.id else away_team
         team_flag = home_flag if sub_event.team_id == match.home_team.id else away_flag
 
+        # Use team name if no flag available
+        team_display = f"{team_flag} {team_name}" if team_flag else team_name
+
         emoji = "🔁"
         if player_in:
-            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_flag} {team_name}) {minute_display}"
+            message = f"{emoji} **Substitution:** {player_in} on for {player_out} ({team_display}) {minute_display}"
         else:
-            message = f"{emoji} **Substitution:** {player_out} ({team_flag} {team_name}) {minute_display}"
+            message = f"{emoji} **Substitution:** {player_out} ({team_display}) {minute_display}"
 
         await channel.send(message)
 
@@ -252,9 +266,11 @@ class MatchNotifier:
         home_goals = match.home_score or 0
         away_goals = match.away_score or 0
 
-        score_line = (
-            f"{home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}"
-        )
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
+        score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
         if half_type == "HT":
             emoji = "⏸️"
@@ -264,6 +280,20 @@ class MatchNotifier:
             title = "FULL-TIME"
 
         message = f"{emoji} **{title}:** {score_line}"
+
+        # Add winner/result for full-time
+        if half_type == "FT":
+            winner_display = f"{home_flag} " if home_flag else ""
+            winner_display += f"**{home_team} wins!**"
+            loser_display = f"{away_flag} " if away_flag else ""
+            loser_display += f"**{away_team} wins!**"
+
+            if home_goals > away_goals:
+                message += f"\n\n{winner_display}"
+            elif away_goals > home_goals:
+                message += f"\n\n{loser_display}"
+            else:
+                message += "\n\n**Match ends in a draw!**"
 
         await channel.send(message)
 
@@ -285,9 +315,13 @@ class MatchNotifier:
         home_goals = match.home_score or 0
         away_goals = match.away_score or 0
 
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
         message = (
-            f"⏱️ **EXTRA TIME:** {home_flag} {home_team} {home_goals}-{away_goals} "
-            f"{away_team} {away_flag}\n\nThe match is going to extra time!"
+            f"⏱️ **EXTRA TIME:** {home_display} {home_goals}-{away_goals} "
+            f"{away_display}\n\nThe match is going to extra time!"
         )
 
         await channel.send(message)
@@ -310,8 +344,12 @@ class MatchNotifier:
         home_goals = match.home_score or 0
         away_goals = match.away_score or 0
 
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
         message = (
-            f"🎯 **PENALTY SHOOTOUT:** {home_flag} {home_team} vs {away_team} {away_flag}\n\n"
+            f"🎯 **PENALTY SHOOTOUT:** {home_display} vs {away_display}\n\n"
             f"After Extra Time: {home_team} {home_goals}-{away_goals} {away_team}\n"
             f"The match will be decided on penalties!"
         )
@@ -384,9 +422,13 @@ class MatchNotifier:
         home_goals = match.home_score or 0
         away_goals = match.away_score or 0
 
+        # Use team name if no flag available
+        home_display = f"{home_flag} {home_team}" if home_flag else home_team
+        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+
         # Build message
         lines = [
-            f"🏁 **FINAL:** {home_flag} {home_team} {home_goals}-{away_goals} {away_team} {away_flag}\n"
+            f"🏁 **FINAL:** {home_display} {home_goals}-{away_goals} {away_display}\n"
         ]
 
         # Add penalty result if applicable
@@ -402,7 +444,21 @@ class MatchNotifier:
             for goal in goal_events:
                 scorer = goal.player_name or "Unknown"
                 minute_display = format_minute(goal)
-                goal_line = f"{minute_display} - {scorer}"
+
+                # Determine which team scored
+                scoring_flag = (
+                    home_flag if goal.team_id == match.home_team.id else away_flag
+                )
+                scoring_team = (
+                    home_team if goal.team_id == match.home_team.id else away_team
+                )
+
+                # Use team name if no flag available
+                goal_line = f"{minute_display} - "
+                if scoring_flag:
+                    goal_line += f"{scoring_flag} {scorer}"
+                else:
+                    goal_line += f"{scorer} ({scoring_team})"
 
                 if goal.own_goal:
                     goal_line += " (OG)"
