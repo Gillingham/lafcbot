@@ -32,6 +32,132 @@ class MatchNotifier:
         self.timezone = timezone
         self.reddit_client = reddit_client
 
+    def _format_team_display(self, team_name: str) -> str:
+        """
+        Format team display with flag if available, otherwise just team name.
+
+        Args:
+            team_name: Name of the team
+
+        Returns:
+            Formatted string with flag and name, or just name
+        """
+        flag = get_country_flag(team_name)
+        return f"{flag} {team_name}" if flag else team_name
+
+    def _get_team_displays(self, match) -> tuple[str, str]:
+        """
+        Get formatted display strings for both teams.
+
+        Args:
+            match: Match object with home_team and away_team
+
+        Returns:
+            Tuple of (home_display, away_display)
+        """
+        home_display = self._format_team_display(match.home_team.name)
+        # Keep flag on the right side for away team
+        flag = get_country_flag(match.away_team.name)
+        if flag:
+            away_display = f"{match.away_team.name} {flag}"
+        else:
+            away_display = match.away_team.name
+        return home_display, away_display
+
+    def _get_scores(self, match) -> tuple[int, int]:
+        """
+        Get scores from match with 0 defaults.
+
+        Args:
+            match: Match object
+
+        Returns:
+            Tuple of (home_goals, away_goals)
+        """
+        return match.home_score or 0, match.away_score or 0
+
+    def _get_event_team_display(
+        self,
+        event,
+        match,
+        home_team: str,
+        away_team: str,
+        home_flag: str,
+        away_flag: str,
+    ) -> str:
+        """
+        Get formatted team display for an event.
+
+        Args:
+            event: Event object with team_id
+            match: Match object
+            home_team: Home team name
+            away_team: Away team name
+            home_flag: Home team flag emoji
+            away_flag: Away team flag emoji
+
+        Returns:
+            Formatted team display string
+        """
+        is_home = event.team_id == match.home_team.id
+        team_name = home_team if is_home else away_team
+        team_flag = home_flag if is_home else away_flag
+        return f"{team_flag} {team_name}" if team_flag else team_name
+
+    def _format_goal_list(
+        self,
+        details,
+        match,
+        home_team: str,
+        away_team: str,
+        home_flag: str,
+        away_flag: str,
+    ) -> str:
+        """
+        Format goal events into a list string.
+
+        Args:
+            details: MatchDetails object with events
+            match: Match object
+            home_team: Home team name
+            away_team: Away team name
+            home_flag: Home team flag emoji
+            away_flag: Away team flag emoji
+
+        Returns:
+            Formatted goal list string, or empty string if no goals
+        """
+        goal_events = [e for e in details.events if e.type.lower() == "goal"]
+        if not goal_events:
+            return ""
+
+        lines = ["**⚽ Goals:**"]
+        for goal in goal_events:
+            scorer = goal.player_name or "Unknown"
+            minute_display = format_minute(goal)
+
+            scoring_flag = (
+                home_flag if goal.team_id == match.home_team.id else away_flag
+            )
+            scoring_team = (
+                home_team if goal.team_id == match.home_team.id else away_team
+            )
+
+            goal_line = f"{minute_display} - "
+            if scoring_flag:
+                goal_line += f"{scoring_flag} {scorer}"
+            else:
+                goal_line += f"{scorer} ({scoring_team})"
+
+            if goal.own_goal:
+                goal_line += " (OG)"
+            elif goal.assist_name:
+                goal_line += f" ({goal.assist_name})"
+
+            lines.append(goal_line)
+
+        return "\n".join(lines)
+
     async def notify_match_start(self, details):
         """
         Send a notification when a match starts.
@@ -40,14 +166,7 @@ class MatchNotifier:
             details: MatchDetails object with match info
         """
         match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+        home_display, away_display = self._get_team_displays(match)
 
         kickoff_info = ""
         if match.start_time:
@@ -71,7 +190,9 @@ class MatchNotifier:
         await send_to_channels(
             self.bot, message, [regular_channel_name, live_channel_name]
         )
-        logger.info(f"Match start notification sent for {home_team} vs {away_team}")
+        logger.info(
+            f"Match start notification sent for {match.home_team.name} vs {match.away_team.name}"
+        )
 
     async def notify_goal(self, channel, details, goal_event):
         """
@@ -86,9 +207,8 @@ class MatchNotifier:
         home_team = match.home_team.name
         away_team = match.away_team.name
 
-        # Get flags
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
 
         # Determine which team scored
         scoring_team = (
@@ -98,14 +218,6 @@ class MatchNotifier:
         # Build message
         scorer = goal_event.player_name or "Unknown"
         minute_display = format_minute(goal_event)
-
-        # Get current score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
@@ -195,19 +307,19 @@ class MatchNotifier:
 
         player = card_event.player_name or "Unknown"
         minute_display = format_minute(card_event)
-        team_name = home_team if card_event.team_id == match.home_team.id else away_team
-        team_flag = home_flag if card_event.team_id == match.home_team.id else away_flag
 
-        # Use team name if no flag available
-        team_display = f"{team_flag} {team_name}" if team_flag else team_name
+        team_display = self._get_event_team_display(
+            card_event, match, home_team, away_team, home_flag, away_flag
+        )
 
         message = (
             f"{emoji} **{card_title}:** {player} {minute_display} for {team_display}"
         )
-        if card_event.description:
-            description = card_event.description.strip()
-            if description.lower() not in {"yellow card", "red card"}:
-                message += f"\n{description}"
+        # Disable the description for now since it often just repeats the card type and clutters the messageßß
+        # if card_event.description:
+        #    description = card_event.description.strip()
+        #    if description.lower() not in {"yellow card", "red card"}:
+        #        message += f"\n{description}"
 
         await channel.send(message)
 
@@ -230,11 +342,9 @@ class MatchNotifier:
         player_in = getattr(sub_event, "assist_name", None)
         minute_display = format_minute(sub_event)
 
-        team_name = home_team if sub_event.team_id == match.home_team.id else away_team
-        team_flag = home_flag if sub_event.team_id == match.home_team.id else away_flag
-
-        # Use team name if no flag available
-        team_display = f"{team_flag} {team_name}" if team_flag else team_name
+        team_display = self._get_event_team_display(
+            sub_event, match, home_team, away_team, home_flag, away_flag
+        )
 
         emoji = "🔁"
         if player_in:
@@ -262,13 +372,8 @@ class MatchNotifier:
         # Get the half type from the event (HT or FT)
         half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
 
-        # Get score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
@@ -280,6 +385,14 @@ class MatchNotifier:
             title = "FULL-TIME"
 
         message = f"{emoji} **{title}:** {score_line}"
+
+        # Add goals for half-time
+        if half_type == "HT":
+            goal_list = self._format_goal_list(
+                details, match, home_team, away_team, home_flag, away_flag
+            )
+            if goal_list:
+                message += f"\n\n{goal_list}"
 
         # Add winner/result for full-time
         if half_type == "FT":
@@ -306,18 +419,8 @@ class MatchNotifier:
             details: MatchDetails object
         """
         match = details.match
-        home_team = match.home_team.name
-        away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
-
-        # Get scores directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
 
         message = (
             f"⏱️ **EXTRA TIME:** {home_display} {home_goals}-{away_goals} "
@@ -337,16 +440,9 @@ class MatchNotifier:
         match = details.match
         home_team = match.home_team.name
         away_team = match.away_team.name
-        home_flag = get_country_flag(home_team)
-        away_flag = get_country_flag(away_team)
 
-        # Get regular time scores directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
 
         message = (
             f"🎯 **PENALTY SHOOTOUT:** {home_display} vs {away_display}\n\n"
@@ -418,13 +514,8 @@ class MatchNotifier:
         home_flag = get_country_flag(home_team)
         away_flag = get_country_flag(away_team)
 
-        # Get final score directly from match object
-        home_goals = match.home_score or 0
-        away_goals = match.away_score or 0
-
-        # Use team name if no flag available
-        home_display = f"{home_flag} {home_team}" if home_flag else home_team
-        away_display = f"{away_team} {away_flag}" if away_flag else away_team
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
 
         # Build message
         lines = [
@@ -438,34 +529,11 @@ class MatchNotifier:
             )
 
         # Add goals
-        goal_events = [e for e in details.events if e.type.lower() == "goal"]
-        if goal_events:
-            lines.append("**⚽ Goals:**")
-            for goal in goal_events:
-                scorer = goal.player_name or "Unknown"
-                minute_display = format_minute(goal)
-
-                # Determine which team scored
-                scoring_flag = (
-                    home_flag if goal.team_id == match.home_team.id else away_flag
-                )
-                scoring_team = (
-                    home_team if goal.team_id == match.home_team.id else away_team
-                )
-
-                # Use team name if no flag available
-                goal_line = f"{minute_display} - "
-                if scoring_flag:
-                    goal_line += f"{scoring_flag} {scorer}"
-                else:
-                    goal_line += f"{scorer} ({scoring_team})"
-
-                if goal.own_goal:
-                    goal_line += " (OG)"
-                elif goal.assist_name:
-                    goal_line += f" ({goal.assist_name})"
-
-                lines.append(goal_line)
+        goal_list = self._format_goal_list(
+            details, match, home_team, away_team, home_flag, away_flag
+        )
+        if goal_list:
+            lines.append(goal_list)
             lines.append("")
 
         # Add official highlights if available
