@@ -13,6 +13,7 @@
     "world-cup-2026": "world_cup",
     "world-cup-2026-live": "world_cup"
   },
+  "match_output_path": "test_data",
   "world_cup": {
     "enabled": true,
     "channel_name": "world-cup-2026",

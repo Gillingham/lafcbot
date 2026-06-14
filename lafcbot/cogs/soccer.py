@@ -535,5 +535,7 @@ class SoccerCog(commands.Cog):
 
 def setup(bot):
     """Setup function to add the cog."""
-    fotmob_client = FotMobClient()
+    config = load_config()
+    match_output_path = config.get("match_output_path")
+    fotmob_client = FotMobClient(match_output_path=match_output_path)
     bot.add_cog(SoccerCog(bot, fotmob_client))

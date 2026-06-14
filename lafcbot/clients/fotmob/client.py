@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 from base64 import b64encode
 from datetime import date, datetime
@@ -162,13 +163,19 @@ class FotMobClient:
     with automatic fallback when Cloudflare protection blocks API access.
     """
 
-    def __init__(self, session: aiohttp.ClientSession | None = None):
+    def __init__(
+        self,
+        session: aiohttp.ClientSession | None = None,
+        match_output_path: str | None = None,
+    ):
         """
         Initialize the FotMob client.
 
         Args:
             session: Optional aiohttp session. If not provided, a new one
                     will be created and managed by this client.
+            match_output_path: Optional directory path to write match JSON dumps.
+                             If None, no dumps are written.
         """
         self._session = session
         self._owns_session = session is None
@@ -176,6 +183,7 @@ class FotMobClient:
         self._page_slugs: dict[int, str] = {}
         self._match_details_cache: dict[int, tuple[float, MatchDetails]] = {}
         self._etag_cache: dict[int, str] = {}  # For HTTP caching with authenticated API
+        self._match_output_path = match_output_path
 
     async def __aenter__(self):
         if self._session is None:
@@ -506,9 +514,12 @@ class FotMobClient:
             if html:
                 page_props = extract_page_props(html)
                 if page_props:
-                    # Dump JSON for analysis if match_id is provided
-                    if match_id:
-                        dump_path = f"match_{match_id}_dump.json"
+                    # Dump JSON for analysis if match_id and output path provided
+                    if match_id and self._match_output_path:
+                        os.makedirs(self._match_output_path, exist_ok=True)
+                        dump_path = os.path.join(
+                            self._match_output_path, f"match_{match_id}_dump.json"
+                        )
                         try:
                             with open(dump_path, "w") as f:
                                 json.dump(page_props, f, indent=2)
@@ -588,13 +599,17 @@ class FotMobClient:
 
             if data:
                 try:
-                    # Dump JSON for analysis
-                    dump_path = f"match_{match_id}_dump.json"
-                    try:
-                        with open(dump_path, "w") as f:
-                            json.dump(data, f, indent=2)
-                    except Exception as e:
-                        logger.error(f"Failed to dump match JSON: {e}")
+                    # Dump JSON for analysis if output path provided
+                    if self._match_output_path:
+                        os.makedirs(self._match_output_path, exist_ok=True)
+                        dump_path = os.path.join(
+                            self._match_output_path, f"match_{match_id}_dump.json"
+                        )
+                        try:
+                            with open(dump_path, "w") as f:
+                                json.dump(data, f, indent=2)
+                        except Exception as e:
+                            logger.error(f"Failed to dump match JSON: {e}")
                     details = self._parse_match_details_from_api(data)
                     if details and match_id:
                         self._match_details_cache[match_id] = (
