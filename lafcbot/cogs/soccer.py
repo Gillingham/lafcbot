@@ -81,7 +81,7 @@ class SoccerCog(commands.Cog):
         # At this point league is always a string
         assert isinstance(league, str)
 
-        # Resolve league name/alias to canonical name and ID
+        # Resolve league name/alias to nonical name and ID
         league_key, league_id = resolve_league_name(league)
 
         if not league_id or not league_key:
@@ -455,7 +455,6 @@ class SoccerCog(commands.Cog):
                 home_flag = get_country_flag(home_team)
                 away_flag = get_country_flag(away_team)
 
-            # Calculate score from events
             home_goals = len(
                 [
                     e
