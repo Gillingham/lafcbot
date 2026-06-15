@@ -13,11 +13,6 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
-[project.optional-dependencies]
-brightdata = [
-    "brightdata-sdk>=1.0.0",
-]
-
 [tool.setuptools]
 packages = ["lafcbot"]
 
