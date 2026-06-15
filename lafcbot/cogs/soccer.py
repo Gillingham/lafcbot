@@ -203,6 +203,7 @@ class SoccerCog(commands.Cog):
                     match_line += f" ({match.match_time_display})"
 
                 lines.append(match_line)
+                lines.append("")  # Add blank line between matches
 
             # Display upcoming matches with detailed info (limit to 5 for venue/broadcast lookup)
             for match in upcoming[:5]:
@@ -270,6 +271,9 @@ class SoccerCog(commands.Cog):
                 if us_broadcast_channels:
                     lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
 
+                # Add blank line between matches
+                lines.append("")
+
             # Show remaining upcoming matches without venue info (6-10)
             if len(upcoming) > 5:
                 for match in upcoming[5:10]:
@@ -298,6 +302,9 @@ class SoccerCog(commands.Cog):
                         lines.append(f"{home_name} vs {away_name} - {time_str}")
                     else:
                         lines.append(f"{home_name} vs {away_name}")
+
+                    # Add blank line between matches
+                    lines.append("")
 
             response = "\n".join(lines)
             if len(response) > 2000:
