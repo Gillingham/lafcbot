@@ -313,7 +313,11 @@ class RedditGoalFetcher:
                 search_query = f"r/soccer {query}"
 
                 # Determine time filter based on how recent the match is
-                now = datetime.now()
+                # Ensure both datetimes have the same timezone awareness
+                if match_time.tzinfo is not None:
+                    now = datetime.now(match_time.tzinfo)
+                else:
+                    now = datetime.now()
                 match_age = now - match_time
 
                 if match_age < timedelta(hours=1):
