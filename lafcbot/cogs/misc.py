@@ -252,6 +252,6 @@ class MiscCog(commands.Cog):
             print(traceback.format_exc())
 
 
-def setup(bot):
+async def setup(bot):
     """Setup function to add the cog."""
-    bot.add_cog(MiscCog(bot))
+    await bot.add_cog(MiscCog(bot))

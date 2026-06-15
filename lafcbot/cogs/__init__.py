@@ -1,1 +1,0 @@
-"""Discord cogs for lafcbot."""

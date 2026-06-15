@@ -396,6 +396,6 @@ class LatepassCog(commands.Cog):
                     print(f"Error saving URL {url}: {e}")
 
 
-def setup(bot):
+async def setup(bot):
     """Setup function to add the cog."""
-    bot.add_cog(LatepassCog(bot))
+    await bot.add_cog(LatepassCog(bot))

@@ -309,6 +309,6 @@ class PandaPingCog(commands.Cog):
             logger.error(f"Error in manual check: {e}", exc_info=True)
 
 
-def setup(bot):
+async def setup(bot):
     """Setup function to add the cog."""
-    bot.add_cog(PandaPingCog(bot))
+    await bot.add_cog(PandaPingCog(bot))
