@@ -6,6 +6,7 @@ from pathlib import Path
 
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 
 
 def load_config() -> dict:
@@ -171,6 +172,9 @@ async def shutdown():
 
 
 def main():
+    # Load environment variables from .env file
+    load_dotenv()
+
     token = os.environ.get("DISCORD_TOKEN")
     if not token:
         print("Error: DISCORD_TOKEN environment variable not set.")

@@ -39,14 +39,29 @@ uv sync
 uv tool install pre-commit
 pre-commit install
 
-# Set your Discord bot token
-export DISCORD_TOKEN="your_token_here"
+# Create a .env file from the example
+cp .env.example .env
+# Edit .env and add your DISCORD_TOKEN
 
 # Run the bot
 uv run python run.py
 ```
 
 ## Configuration
+
+### Environment Variables
+
+The bot uses a `.env` file for sensitive credentials. Create it in the project root:
+
+```bash
+# .env
+DISCORD_TOKEN=your_discord_token_here
+BRIGHTDATA_API_TOKEN=your_brightdata_token_here  # Optional, for Reddit clip fetching
+```
+
+**Important:** The `.env` file is already in `.gitignore` to prevent accidentally committing secrets to version control.
+
+### Bot Settings
 
 The bot uses `config.json` for settings. Create it in the project root:
 
@@ -365,10 +380,59 @@ The bot includes a complete async Python library for scraping FotMob:
 - **Sports Scores:** ESPN public scoreboard API (NBA, MLB, NHL, NFL, F1)
 - **Venue Information:** Extracted from match details pages
 - **TV Providers:** Extracted from match page HTML (US only)
-- **Goal Replay Clips:** Reddit r/soccer (via public JSON API)
+- **Goal Replay Clips:** Reddit r/soccer (direct API + optional BrightData fallback)
 - **Highlights:** FotMob official highlights URLs
 - **Weather Data:** Open-Meteo API (free, no API key required)
 - **Air Quality:** Open-Meteo Air Quality API
+
+### Reddit Clip Fetching
+
+The bot attempts to fetch goal replay clips from Reddit's r/soccer community. Due to Reddit's aggressive bot detection, the direct API often returns 403 (Forbidden) errors.
+
+**How it works:**
+
+1. **Direct Reddit API (Free)** - Always tried first
+   - Uses Reddit's public JSON endpoint
+   - Often blocked with HTTP 403 errors
+   - No configuration needed
+
+2. **BrightData Fallback (Optional, Paid)** - Automatic fallback when direct access fails
+   - Only used if `BRIGHTDATA_API_TOKEN` is configured
+   - Routes requests through residential proxy network
+   - Bypasses Reddit's bot detection
+   - Costs ~$0.50-$10 per GB + subscription (~$50-100/month estimated)
+
+**Configuration:**
+
+Add your BrightData API token to the `.env` file:
+
+```bash
+# .env file
+DISCORD_TOKEN=your_discord_token_here
+BRIGHTDATA_API_TOKEN=your_brightdata_token_here  # Optional, for Reddit clip fetching
+```
+
+Then install the BrightData SDK:
+
+```bash
+# Install BrightData SDK (if using fallback)
+uv sync --extra brightdata
+```
+
+**Without BrightData token:**
+- Bot runs normally
+- Attempts direct Reddit access
+- No clips found when Reddit blocks (current behavior)
+- No additional costs
+
+**With BrightData token:**
+- Bot runs normally
+- Attempts direct Reddit access first
+- Falls back to BrightData on 403 errors
+- Higher success rate for finding clips
+- Incurs BrightData usage costs
+
+**Note:** Reddit's Terms of Service prohibit automated scraping. BrightData bypasses this restriction but may violate Reddit's TOS. Use at your own discretion.
 
 ### Database
 
@@ -431,6 +495,12 @@ lafcbot/
 - `beautifulsoup4>=4.12.0` - HTML parsing
 - `lxml>=5.0.0` - Fast XML/HTML processing
 - `aiosqlite>=0.20.0` - Async SQLite database (for user preferences and latepass tracking)
+
+### Optional Dependencies
+
+- `brightdata-sdk>=1.0.0` - BrightData proxy service for Reddit access (optional, requires paid account)
+  - Install with: `uv sync --extra brightdata`
+  - See "Reddit Clip Fetching" section below for configuration
 
 ## Development
 
