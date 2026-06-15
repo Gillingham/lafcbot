@@ -9,7 +9,7 @@ import discord
 from lafcbot.match_events.detectors import get_card_color
 from lafcbot.match_events.formatters import format_minute
 from lafcbot.utils.countries import get_country_flag
-from lafcbot.utils.discord_helpers import send_to_channels
+from lafcbot.utils.discord_helpers import find_channel_by_name, send_to_channels
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,53 @@ class MatchNotifier:
             Tuple of (home_goals, away_goals)
         """
         return match.home_score or 0, match.away_score or 0
+
+    def _format_lineup(self, team_lineup: dict, team_name: str) -> str:
+        """
+        Format a team's starting lineup and bench for display.
+
+        Args:
+            team_lineup: Dictionary with 'starters', 'subs', and 'formation' keys
+            team_name: Name of the team
+
+        Returns:
+            Formatted string with formation, starters, and bench, or empty string if data missing
+        """
+        if not team_lineup:
+            return ""
+
+        # Position ID mapping (usualPlayingPositionId)
+        position_map = {0: "GK", 1: "DEF", 2: "MID", 3: "FWD"}
+
+        formation = team_lineup.get("formation", "Unknown")
+        starters = team_lineup.get("starters", [])
+        subs = team_lineup.get("subs", [])
+
+        if not starters:
+            return ""
+
+        # Format starters: "Name (POS)"
+        starter_names = []
+        for starter in starters[:11]:
+            name = starter.get("name", "Unknown")
+            pos_id = starter.get("usualPlayingPositionId", 0)
+            pos = position_map.get(pos_id, "")
+            starter_names.append(f"{name} ({pos})" if pos else name)
+
+        # Format bench: "Name (POS)"
+        bench_names = []
+        for sub in subs:
+            name = sub.get("name", "Unknown")
+            pos_id = sub.get("usualPlayingPositionId", 0)
+            pos = position_map.get(pos_id, "")
+            bench_names.append(f"{name} ({pos})" if pos else name)
+
+        result = f"**{team_name} ({formation}):**\n"
+        result += "Starters: " + ", ".join(starter_names)
+        if bench_names:
+            result += "\nBench: " + ", ".join(bench_names)
+
+        return result
 
     def _get_event_team_display(
         self,
@@ -173,15 +220,34 @@ class MatchNotifier:
             start_time = match.start_time.astimezone(self.timezone)
             kickoff_info = f"\nKickoff: {start_time.strftime('%b %d, %I:%M %p %Z')}"
 
-        message = (
-            f"🟢 **MATCH STARTED:** {home_display} vs {away_display}"
-            f"{kickoff_info}\n\n"
-            "Live updates are available in the World Cup live channel."
-        )
+        # Format lineups if available
+        lineup_section = ""
+        if details.lineups:
+            home_lineup = self._format_lineup(
+                details.lineups.get("homeTeam", {}), match.home_team.name
+            )
+            away_lineup = self._format_lineup(
+                details.lineups.get("awayTeam", {}), match.away_team.name
+            )
+            if home_lineup and away_lineup:
+                lineup_section = f"\n\n{home_lineup}\n\n{away_lineup}"
 
         regular_channel_name = self.config.get("channel_name", "world-cup-2026")
         live_channel_name = self.config.get("live_monitoring", {}).get(
             "channel_name", "world-cup-live"
+        )
+
+        # Get channel mention or fallback to plain text
+        live_channel = find_channel_by_name(self.bot, live_channel_name)
+        channel_ref = (
+            live_channel.mention if live_channel else "the World Cup live channel"
+        )
+
+        message = (
+            f"🟢 **MATCH STARTED:** {home_display} vs {away_display}"
+            f"{kickoff_info}"
+            f"{lineup_section}\n\n"
+            f"Live updates are available in {channel_ref}."
         )
 
         logger.debug(
