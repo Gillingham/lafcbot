@@ -8,7 +8,7 @@ from discord.ext import commands
 from lafcbot.bot import load_config
 from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
-from lafcbot.utils.countries import get_country_flag
+from lafcbot.utils.countries import get_country_flag, get_country_rank
 
 
 class SoccerCog(commands.Cog):
@@ -183,11 +183,15 @@ class SoccerCog(commands.Cog):
                 away_name = self.clean_team_name(match.away_team.name, league_key)
                 if league_key == "world_cup":
                     home_flag = get_country_flag(home_name)
+                    home_rank = get_country_rank(home_name) 
                     away_flag = get_country_flag(away_name)
+                    away_rank = get_country_rank(away_name)
                     if home_flag:
-                        home_name = f"{home_flag} {home_name}"
+                        home_rank_text = f" (#{home_rank})" if home_rank is not None else ""
+                        home_name = f"{home_flag} {home_name}{home_rank_text}"
                     if away_flag:
-                        away_name = f"{away_flag} {away_name}"
+                        away_rank_text = f" (#{away_rank})" if away_rank is not None else ""
+                        away_name = f"{away_flag} {away_name}{away_rank_text}"
 
                 # Add match time for live matches
                 match_line = f"{status_emoji} {home_name} {score} {away_name}"
@@ -227,11 +231,15 @@ class SoccerCog(commands.Cog):
                 away_name = self.clean_team_name(match.away_team.name, league_key)
                 if league_key == "world_cup":
                     home_flag = get_country_flag(home_name)
+                    home_rank = get_country_rank(home_name) 
                     away_flag = get_country_flag(away_name)
+                    away_rank = get_country_rank(away_name)
                     if home_flag:
-                        home_name = f"{home_flag} {home_name}"
+                        home_rank_text = f" (#{home_rank})" if home_rank is not None else ""
+                        home_name = f"{home_flag} {home_name}{home_rank_text}"
                     if away_flag:
-                        away_name = f"{away_flag} {away_name}"
+                        away_rank_text = f" (#{away_rank})" if away_rank is not None else ""
+                        away_name = f"{away_flag} {away_name}{away_rank_text}"
 
                 if match.start_time:
                     match_time_la = match.start_time.astimezone(la_tz)
@@ -262,11 +270,15 @@ class SoccerCog(commands.Cog):
                     away_name = self.clean_team_name(match.away_team.name, league_key)
                     if league_key == "world_cup":
                         home_flag = get_country_flag(home_name)
+                        home_rank = get_country_rank(home_name) 
                         away_flag = get_country_flag(away_name)
+                        away_rank = get_country_rank(away_name)
                         if home_flag:
-                            home_name = f"{home_flag} {home_name}"
+                            home_rank_text = f" (#{home_rank})" if home_rank is not None else ""
+                            home_name = f"{home_flag} {home_name}{home_rank_text}"
                         if away_flag:
-                            away_name = f"{away_flag} {away_name}"
+                            away_rank_text = f" (#{away_rank})" if away_rank is not None else ""
+                            away_name = f"{away_flag} {away_name}{away_rank_text}"
 
                     if match.start_time:
                         match_time_la = match.start_time.astimezone(la_tz)
