@@ -1,6 +1,9 @@
 """Country flag utilities for soccer teams."""
 
+from functools import cache
 
+
+@cache
 def get_country_flag(country_name: str) -> str:
     """
     Convert a country name to its flag emoji.
@@ -135,7 +138,6 @@ def get_country_flag(country_name: str) -> str:
     return flag
 
 
-
 # FIFA World Rankings
 FIFA_RANKINGS = {
     "Argentina": 1,
@@ -236,6 +238,8 @@ FIFA_RANKINGS = {
     "Dominican Republic": 144,
 }
 
+
+@cache
 def get_country_rank(country_name: str) -> int | None:
     """
     Get the FIFA men's ranking for a country.

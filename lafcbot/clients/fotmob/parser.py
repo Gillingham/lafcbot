@@ -2,10 +2,9 @@
 
 import json
 import re
-from typing import Optional
 
 
-def extract_next_data(html: str) -> Optional[dict]:
+def extract_next_data(html: str) -> dict | None:
     """
     Extract the __NEXT_DATA__ JSON from a FotMob HTML page.
 
@@ -44,7 +43,7 @@ def extract_next_data(html: str) -> Optional[dict]:
         return None
 
 
-def extract_page_props(html: str) -> Optional[dict]:
+def extract_page_props(html: str) -> dict | None:
     """
     Alias for extract_next_data for better semantic meaning.
     """

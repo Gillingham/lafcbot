@@ -1,8 +1,6 @@
 """Open-Meteo API client for fetching current weather conditions."""
 
-import asyncio
 import logging
-from typing import Optional
 
 import aiohttp
 
@@ -38,8 +36,8 @@ class WeatherData:
         temp_max_f: float,
         temp_min_f: float,
         precipitation_probability: int,
-        air_quality_index: Optional[int] = None,
-        air_quality_category: Optional[str] = None,
+        air_quality_index: int | None = None,
+        air_quality_category: str | None = None,
     ):
         self.location = location
         self.temperature_f = temperature_f
@@ -122,7 +120,7 @@ class OpenMeteoClient:
 
     def __init__(self):
         """Initialize the Open-Meteo client."""
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()
@@ -137,7 +135,7 @@ class OpenMeteoClient:
             await self._session.close()
             self._session = None
 
-    async def get_current_weather(self, location: str) -> Optional[WeatherData]:
+    async def get_current_weather(self, location: str) -> WeatherData | None:
         """
         Get current weather conditions for a location.
 
@@ -217,7 +215,7 @@ class OpenMeteoClient:
 
                 return self._parse_weather_data(weather_data, display_name, aqi_value)
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             logger.error(f"Weather request timed out: {e}")
             raise OpenMeteoTimeoutError("Weather service request timed out") from e
         except aiohttp.ClientError as e:
@@ -284,9 +282,7 @@ class OpenMeteoClient:
         "DC": "District of Columbia",
     }
 
-    async def _geocode_location(
-        self, location: str
-    ) -> Optional[tuple[float, float, str]]:
+    async def _geocode_location(self, location: str) -> tuple[float, float, str] | None:
         """
         Convert a location string to coordinates.
 
@@ -336,7 +332,7 @@ class OpenMeteoClient:
 
     async def _geocode_query(
         self, query: str, state_filter: str | None = None
-    ) -> Optional[tuple[float, float, str]]:
+    ) -> tuple[float, float, str] | None:
         """Execute a single geocoding query.
 
         Args:
@@ -371,7 +367,7 @@ class OpenMeteoClient:
                         if result:
                             return result
                 return None
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             logger.error(f"Geocoding timed out: {e}")
             raise OpenMeteoTimeoutError("Geocoding request timed out") from e
         except aiohttp.ClientError as e:
@@ -381,7 +377,7 @@ class OpenMeteoClient:
             logger.error(f"Geocoding failed: {e}")
             raise OpenMeteoError("Geocoding failed") from e
 
-    def _build_result(self, result: dict) -> Optional[tuple[float, float, str]]:
+    def _build_result(self, result: dict) -> tuple[float, float, str] | None:
         """Build result tuple from geocoding result dict."""
         lat = result.get("latitude")
         lon = result.get("longitude")
@@ -402,8 +398,8 @@ class OpenMeteoClient:
         return None
 
     def _parse_weather_data(
-        self, data: dict, display_name: str, aqi: Optional[int] = None
-    ) -> Optional[WeatherData]:
+        self, data: dict, display_name: str, aqi: int | None = None
+    ) -> WeatherData | None:
         """Parse weather data from API response."""
         try:
             current = data.get("current")

@@ -3,7 +3,6 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 import aiohttp
 
@@ -20,7 +19,7 @@ class Game:
     home_score: str
     status: str
     is_scheduled: bool
-    scheduled_time: Optional[datetime] = None
+    scheduled_time: datetime | None = None
 
 
 class ESPNClient:
@@ -38,7 +37,7 @@ class ESPNClient:
 
     def __init__(self):
         """Initialize the ESPN client."""
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()
@@ -115,7 +114,7 @@ class ESPNClient:
             logger.error(f"Failed to parse scoreboard data: {e}")
             return (None, [])
 
-    def _parse_game(self, event: dict) -> Optional[Game]:
+    def _parse_game(self, event: dict) -> Game | None:
         """Parse a single game from event data."""
         try:
             competition = event.get("competitions", [{}])[0]
