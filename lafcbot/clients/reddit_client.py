@@ -312,34 +312,17 @@ class RedditGoalFetcher:
                 # Add "r/soccer" to the query to limit to that subreddit
                 search_query = f"r/soccer {query}"
 
-                # Determine time filter based on how recent the match is
-                # Ensure both datetimes have the same timezone awareness
-                if match_time.tzinfo is not None:
-                    now = datetime.now(match_time.tzinfo)
-                else:
-                    now = datetime.now()
-                match_age = now - match_time
-
-                if match_age < timedelta(hours=1):
-                    date_filter = "Past hour"
-                elif match_age < timedelta(hours=24):
-                    date_filter = "Past 24 hours"
-                elif match_age < timedelta(days=7):
-                    date_filter = "Past week"
-                elif match_age < timedelta(days=30):
-                    date_filter = "Past month"
-                else:
-                    date_filter = "Past year"
-
                 logger.info(
-                    f"Using BrightData Reddit scraper with query: {search_query}, time filter: {date_filter}"
+                    f"Using BrightData Reddit scraper with query: {search_query}"
                 )
 
+                # Note: The date parameter causes validation errors in BrightData's Reddit scraper
+                # We'll rely on sorting by "New" and filtering results by timestamp after fetching
+                # Valid sort_by values: "Hot", "Top", "New", "Rising"
                 result = await client.scrape.reddit.posts_by_keyword(
                     keyword=search_query,
-                    date=date_filter,
-                    sort_by="Relevance",
-                    num_of_posts=15,  # Limit to 15 posts like the API
+                    sort_by="New",  # Get most recent posts
+                    num_of_posts=50,  # Fetch more to improve chances of finding the clip
                     timeout=60,
                 )
 
