@@ -87,7 +87,12 @@ class MiscCog(commands.Cog):
                 if game.is_scheduled and game.scheduled_time:
                     # For scheduled games, show time without scores
                     local_time = game.scheduled_time.astimezone(self.timezone)
-                    time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")
+                    # time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")  -- not windows compatible
+                    time_str = (
+                        f"{local_time.strftime('%a')} "
+                        f"{local_time.month}/{local_time.day} "
+                        f"{local_time.strftime('%I:%M %p').lstrip('0')}"
+                    )
                     game_str = f"{game.away_team} @ {game.home_team} ({time_str})"
                 else:
                     # For in-progress or final games, show scores and status
