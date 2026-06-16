@@ -26,7 +26,7 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - `uv` (https://docs.astral.sh/uv/)
 - A Discord bot token
 
@@ -601,6 +601,30 @@ lafcbot/
 │   ├── tasks/                 # Background tasks
 │   │   ├── __init__.py
 │   │   └── world_cup.py       # World Cup daily schedule + live monitoring
+│   ├── match_events/          # Match event monitoring system
+│   │   ├── __init__.py
+│   │   ├── monitor.py         # Live match monitoring loop
+│   │   ├── tracker.py         # Event state tracking
+│   │   ├── detectors.py       # Event detection logic
+│   │   ├── formatters.py      # Event message formatting helpers
+│   │   └── notifiers.py       # Discord notification formatting
+│   ├── formatters/            # Message formatters (testable, reusable)
+│   │   ├── __init__.py
+│   │   ├── base.py            # BaseFormatter with shared utilities
+│   │   ├── world_cup.py       # World Cup daily match notifications
+│   │   ├── soccer.py          # Soccer command responses
+│   │   ├── latepass.py        # LatePass command responses
+│   │   ├── sports.py          # Sports scores (ESPN API)
+│   │   ├── weather.py         # Weather command responses
+│   │   └── misc.py            # Misc commands (dice, 8ball)
+│   ├── utils/                 # Shared utilities
+│   │   ├── __init__.py
+│   │   ├── config.py          # Configuration loading
+│   │   ├── checks.py          # Discord command decorators
+│   │   ├── errors.py          # Error handling decorators
+│   │   ├── time.py            # Time formatting utilities
+│   │   ├── countries.py       # Country flag emoji mapping
+│   │   └── discord_helpers.py # Discord-specific helpers
 │   └── clients/               # API clients
 │       ├── __init__.py
 │       ├── fotmob/            # FotMob wrapper library
@@ -609,8 +633,11 @@ lafcbot/
 │       │   ├── models.py      # Data models (Match, MatchEvent, Highlight, etc.)
 │       │   ├── parser.py      # HTML/JSON extraction
 │       │   └── __init__.py    # Public API
+│       ├── espn_client.py     # ESPN API for sports scores
 │       ├── reddit_client.py   # Reddit r/soccer clip fetcher with caching
 │       └── open_meteo_client.py  # Open-Meteo weather API client
+├── tests/                     # Unit tests
+│   └── formatters/            # Formatter tests (46 tests)
 ├── run.py                     # Entry point
 ├── config.json                # Bot configuration (user-created)
 ├── lafcbot.db                 # SQLite database (auto-created)
