@@ -6,7 +6,6 @@ import traceback
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import discord
 from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
@@ -59,25 +58,12 @@ class WorldCupTask:
         # Load server-specific configurations
         self.server_configs = self.config.get("servers", [])
 
-        # Backward compatibility: if no servers array, create one from legacy config
-        if not self.server_configs and self.config.get("enabled", False):
-            legacy_server = {
-                "channel_name": self.config.get("channel_name", "world-cup-2026"),
-                "live_channel_name": self.config.get("live_monitoring", {}).get(
-                    "channel_name", "world-cup-live"
-                ),
-            }
-            self.server_configs = [legacy_server]
-            logger.warning(
-                "Using legacy world_cup config format. Consider migrating to servers array."
-            )
-
         if self.server_configs:
             logger.info(
                 f"World Cup configured for {len(self.server_configs)} server(s)"
             )
         else:
-            logger.info("World Cup has no servers configured")
+            logger.warning("World Cup has no servers configured")
 
         # Initialize notification handler
         self.notifier = MatchNotifier(
@@ -114,19 +100,18 @@ class WorldCupTask:
             include_live: Include live monitoring channels
 
         Returns:
-            List of (guild_id, channel_name) tuples, or empty list for legacy fallback
+            List of (guild_id, channel_name) tuples
         """
         guild_channels = []
 
         for server_config in self.server_configs:
             guild_id = server_config.get("guild_id")
             if not guild_id:
-                # Legacy format support (no guild_id) - return empty list
-                # Caller will fall back to old send_to_channels()
-                logger.debug("Legacy world_cup config detected (no guild_id)")
-                return []
+                logger.warning(
+                    f"Server config missing guild_id: {server_config.get('channel_name', 'unknown')}"
+                )
+                continue
 
-            # New format: guild-specific
             if include_regular:
                 regular_name = server_config.get("channel_name")
                 if regular_name:
@@ -539,46 +524,9 @@ class WorldCupTask:
 
                         matches_to_monitor[match_id] = SimpleNamespace(id=match_id)
 
-                # Get live channels for all configured servers
-                guild_channels = self._build_guild_channels(
-                    include_regular=False, include_live=True
-                )
-
-                if not guild_channels:
-                    # Fall back to legacy single-channel lookup
-                    channel_name = live_config.get("channel_name", "world-cup-live")
-                    channel = None
-                    for guild in self.bot.guilds:
-                        channel = discord.utils.get(guild.channels, name=channel_name)
-                        if channel:
-                            break
-
-                    if not channel:
-                        logger.warning(f"Live channel {channel_name} not found")
-                        return
-
-                    # Monitor with single legacy channel
-                    for match in matches_to_monitor.values():
-                        await self._monitor_match(match, channel)
-                else:
-                    # Monitor with guild-specific channels
-                    for match in matches_to_monitor.values():
-                        # Send to all configured live channels
-                        for guild_id, channel_name in guild_channels:
-                            guild = self.bot.get_guild(int(guild_id))
-                            if not guild:
-                                continue
-
-                            channel = discord.utils.get(
-                                guild.text_channels, name=channel_name
-                            )
-                            if not channel:
-                                logger.warning(
-                                    f"Live channel #{channel_name} not found in guild {guild.name}"
-                                )
-                                continue
-
-                            await self._monitor_match(match, channel)
+                # Monitor each match once (notifications will be sent to all channels)
+                for match in matches_to_monitor.values():
+                    await self._monitor_match(match, None)
 
                 # Check for matches that finished after monitoring all events
                 await self._check_finished_matches()
@@ -595,13 +543,13 @@ class WorldCupTask:
 
         return game_monitor
 
-    async def _monitor_match(self, match, channel):
+    async def _monitor_match(self, match, channel=None):
         """
         Monitor a single match for new events.
 
         Args:
             match: Match object
-            channel: Discord channel to send notifications to
+            channel: Unused (kept for backwards compatibility)
         """
         try:
             # Get detailed match info using authenticated endpoint for fresher data

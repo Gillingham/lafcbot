@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from lafcbot.match_events.detectors import get_card_color
 from lafcbot.match_events.formatters import format_minute
 from lafcbot.utils.countries import get_country_flag
-from lafcbot.utils.discord_helpers import send_to_channels, send_to_guild_channels
+from lafcbot.utils.discord_helpers import send_to_guild_channels
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +76,12 @@ class MatchNotifier:
         """
         return match.home_score or 0, match.away_score or 0
 
-    def _get_live_channels(self) -> list[tuple[str, str]] | None:
+    def _get_live_channels(self) -> list[tuple[str, str]]:
         """
         Get list of (guild_id, channel_name) tuples for live monitoring channels.
 
         Returns:
-            List of tuples for new format, or None to trigger legacy fallback
+            List of (guild_id, channel_name) tuples
         """
         channels = []
         for server_config in self.server_configs:
@@ -90,11 +90,8 @@ class MatchNotifier:
 
             if guild_id and live_name:
                 channels.append((guild_id, live_name))
-            elif live_name:
-                # Legacy format: no guild_id, return None to trigger old behavior
-                return None
 
-        return channels if channels else None
+        return channels
 
     def _format_lineup(self, team_lineup: dict, team_name: str) -> str:
         """
@@ -258,36 +255,24 @@ class MatchNotifier:
             f"{lineup_section}"
         )
 
-        # Send to guild-specific channels or fall back to legacy
+        # Send to all configured live channels
         guild_channels = self._get_live_channels()
         if guild_channels:
             logger.info(
                 f"Sending match start notification to {len(guild_channels)} channel(s)"
             )
             await send_to_guild_channels(self.bot, message, guild_channels)
-        else:
-            # Legacy fallback
-            regular_channel_name = self.config.get("channel_name", "world-cup-2026")
-            live_channel_name = self.config.get("live_monitoring", {}).get(
-                "channel_name", "world-cup-live"
-            )
-            logger.debug(
-                f"Using legacy format for match start notification: {regular_channel_name}, {live_channel_name}"
-            )
-            await send_to_channels(
-                self.bot, message, [regular_channel_name, live_channel_name]
-            )
 
-        logger.info(
-            f"Match start notification sent for {match.home_team.name} vs {match.away_team.name}"
-        )
+            logger.info(
+                f"Match start notification sent for {match.home_team.name} vs {match.away_team.name}"
+            )
 
     async def notify_goal(self, channel, details, goal_event):
         """
         Send a goal notification to Discord.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
             goal_event: Goal event object
         """
@@ -318,25 +303,30 @@ class MatchNotifier:
             if goal_event.assist_name:
                 message += f"\n**Assist:** {goal_event.assist_name}"
 
-        # Send notification
-        sent_msg = await channel.send(message)
-
-        # Try to fetch Reddit clip in background
-        if self.reddit_client and self.config.get("live_monitoring", {}).get(
-            "notifications", {}
-        ).get("include_reddit_clips", True):
-            asyncio.create_task(
-                self._add_reddit_clip(
-                    sent_msg,
-                    home_team,
-                    away_team,
-                    goal_event.minute,
-                    match.start_time,
-                    scoring_team,
-                    home_goals,
-                    away_goals,
-                )
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending goal notification to {len(guild_channels)} channel(s)"
             )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+            # Try to fetch Reddit clip for all sent messages
+            if self.reddit_client and self.config.get("live_monitoring", {}).get(
+                "notifications", {}
+            ).get("include_reddit_clips", True):
+                asyncio.create_task(
+                    self._add_reddit_clips_to_all_channels(
+                        guild_channels,
+                        home_team,
+                        away_team,
+                        goal_event.minute,
+                        match.start_time,
+                        scoring_team,
+                        home_goals,
+                        away_goals,
+                    )
+                )
 
     async def _add_reddit_clip(
         self,
@@ -374,12 +364,77 @@ class MatchNotifier:
         except Exception as e:
             logger.error(f"Failed to add Reddit clip: {e}")
 
+    async def _add_reddit_clips_to_all_channels(
+        self,
+        guild_channels,
+        home_team,
+        away_team,
+        minute,
+        match_time,
+        scoring_team,
+        home_score,
+        away_score,
+    ):
+        """Try to add Reddit clip links to goal notifications across all channels."""
+        try:
+            # Fetch the clip once
+            result = await asyncio.wait_for(
+                self.reddit_client.search_goal(
+                    home_team=home_team,
+                    away_team=away_team,
+                    minute=minute,
+                    match_time=match_time,
+                    scoring_team=scoring_team,
+                    home_score=home_score,
+                    away_score=away_score,
+                ),
+                timeout=5.0,
+            )
+
+            if result:
+                # Edit last message in each channel to add clip link
+                for guild_id, channel_name in guild_channels:
+                    try:
+                        guild = self.bot.get_guild(int(guild_id))
+                        if not guild:
+                            continue
+
+                        import discord
+
+                        channel = discord.utils.get(
+                            guild.text_channels, name=channel_name
+                        )
+                        if not channel:
+                            continue
+
+                        # Get the last message sent by the bot
+                        async for message in channel.history(limit=10):
+                            if (
+                                message.author == self.bot.user
+                                and "⚽ **GOAL!**" in message.content
+                            ):
+                                new_content = (
+                                    message.content
+                                    + f"\n\n🎥 [Replay]({result['post_url']})"
+                                )
+                                await message.edit(content=new_content)
+                                break
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to add clip to channel {channel_name}: {e}"
+                        )
+
+        except TimeoutError:
+            logger.debug(f"Reddit search timed out for goal at {minute}'")
+        except Exception as e:
+            logger.error(f"Failed to fetch Reddit clip: {e}")
+
     async def notify_card(self, channel, details, card_event):
         """
         Send a yellow or red card notification to Discord.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
             card_event: Card event object
         """
@@ -403,20 +458,21 @@ class MatchNotifier:
         message = (
             f"{emoji} **{card_title}:** {player} {minute_display} for {team_display}"
         )
-        # Disable the description for now since it often just repeats the card type and clutters the messageßß
-        # if card_event.description:
-        #    description = card_event.description.strip()
-        #    if description.lower() not in {"yellow card", "red card"}:
-        #        message += f"\n{description}"
 
-        await channel.send(message)
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending {card_title} notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def notify_substitution(self, channel, details, sub_event):
         """
         Send a substitution notification to Discord.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
             sub_event: Substitution event object
         """
@@ -440,14 +496,17 @@ class MatchNotifier:
         else:
             message = f"{emoji} **Substitution:** {player_out} ({team_display}) {minute_display}"
 
-        await channel.send(message)
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def notify_half_event(self, channel, details, half_event):
         """
         Send a half-time or full-time notification to Discord.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
             half_event: Half-time/full-time event object
         """
@@ -496,14 +555,20 @@ class MatchNotifier:
             else:
                 message += "\n\n**Match ends in a draw!**"
 
-        await channel.send(message)
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending {half_type} notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def notify_extra_time(self, channel, details):
         """
         Send an extra time notification.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
         """
         match = details.match
@@ -515,14 +580,20 @@ class MatchNotifier:
             f"{away_display}\n\nThe match is going to extra time!"
         )
 
-        await channel.send(message)
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending extra time notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def notify_penalties(self, channel, details):
         """
         Send a penalty shootout notification.
 
         Args:
-            channel: Discord channel to send to
+            channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
         """
         match = details.match
@@ -538,7 +609,13 @@ class MatchNotifier:
             f"The match will be decided on penalties!"
         )
 
-        await channel.send(message)
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending penalty shootout notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def notify_match_summary(self, details, stale_threshold, was_monitored=False):
         """
@@ -618,15 +695,10 @@ class MatchNotifier:
 
         message = "\n".join(lines)
 
-        # Send to guild-specific channels or fall back to legacy
+        # Send to all configured live channels
         guild_channels = self._get_live_channels()
         if guild_channels:
             logger.info(f"Sending match summary to {len(guild_channels)} channel(s)")
             await send_to_guild_channels(self.bot, message, guild_channels)
-        else:
-            # Legacy fallback
-            live_config = self.config.get("live_monitoring", {})
-            channel_name = live_config.get("channel_name", "world-cup-live")
-            await send_to_channels(self.bot, message, [channel_name])
 
-        logger.info(f"Sent match summary for {home_team} vs {away_team}")
+            logger.info(f"Sent match summary for {home_team} vs {away_team}")
