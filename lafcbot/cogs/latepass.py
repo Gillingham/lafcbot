@@ -1,10 +1,7 @@
 """Latepass tracking system for Discord - tracks URL reposts."""
 
-import json
 import re
 from datetime import datetime
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands
@@ -20,6 +17,9 @@ from lafcbot.db import (
     save_posted_url,
     update_latepass_score,
 )
+from lafcbot.utils.checks import guild_only_with_message
+from lafcbot.utils.config import load_config, load_timezone
+from lafcbot.utils.time import format_time_ago
 
 
 class LatepassCog(commands.Cog):
@@ -29,31 +29,23 @@ class LatepassCog(commands.Cog):
         self.bot = bot
         # URL pattern to detect URLs in messages
         self.url_pattern = re.compile(r"https?://[^\s<>\"]+|www\.[^\s<>\"]+")
-        # Load timezone and config
-        self.timezone = self._load_timezone()
+        self.timezone = load_timezone()
+        self._load_latepass_config()
 
         # Initialize formatter
         from lafcbot.formatters.latepass import LatePassFormatter
 
         self.formatter = LatePassFormatter(self.timezone)
 
-    def _load_timezone(self) -> ZoneInfo:
-        """Load timezone and latepass config from config.json."""
-        config_path = Path(__file__).parent.parent.parent / "config.json"
+    def _load_latepass_config(self):
+        """Load latepass-specific configuration."""
         try:
-            with open(config_path) as f:
-                config = json.load(f)
-                tz_name = config.get("timezone", "America/Los_Angeles")
-
-                # Load latepass ignored domains
-                latepass_config = config.get("latepass", {})
-                self.ignored_domains = set(latepass_config.get("ignored_domains", []))
-
-                return ZoneInfo(tz_name)
+            config = load_config()
+            latepass_config = config.get("latepass", {})
+            self.ignored_domains = set(latepass_config.get("ignored_domains", []))
         except Exception as e:
-            print(f"Error loading timezone from config: {e}, using default")
+            print(f"Error loading latepass config: {e}, using defaults")
             self.ignored_domains = set()
-            return ZoneInfo("America/Los_Angeles")
 
     def _is_domain_ignored(self, url: str) -> bool:
         """Check if a URL's domain is in the ignore list."""
@@ -76,6 +68,7 @@ class LatepassCog(commands.Cog):
             return False
 
     @commands.group(invoke_without_command=True)
+    @guild_only_with_message()
     async def latepass(self, ctx: commands.Context, user: discord.Member | None = None):
         """Show latepass score for yourself or another user.
 
@@ -87,10 +80,6 @@ class LatepassCog(commands.Cog):
           !latepass top       - Show most reposted URLs
           !latepass viral     - Show viral URLs (10+ reposts)
         """
-        if not ctx.guild:
-            await ctx.message.reply("This command only works in servers.")
-            return
-
         guild_id = str(ctx.guild.id)
 
         # If user specified, show their score, otherwise show command caller's score
@@ -109,16 +98,13 @@ class LatepassCog(commands.Cog):
         await ctx.message.reply(response)
 
     @latepass.command(name="leaderboard")
+    @guild_only_with_message()
     async def latepass_leaderboard(self, ctx: commands.Context, limit: int = 10):
         """Show the latepass leaderboard for this server.
 
         Usage: !latepass leaderboard [limit]
         Example: !latepass leaderboard 20
         """
-        if not ctx.guild:
-            await ctx.message.reply("This command only works in servers.")
-            return
-
         # Clamp limit
         limit = max(5, min(limit, 50))
 
@@ -149,15 +135,12 @@ class LatepassCog(commands.Cog):
         await ctx.message.reply(response)
 
     @latepass.command(name="stats")
+    @guild_only_with_message()
     async def latepass_stats(self, ctx: commands.Context):
         """Show overall latepass statistics for this server.
 
         Usage: !latepass stats
         """
-        if not ctx.guild:
-            await ctx.message.reply("This command only works in servers.")
-            return
-
         guild_id = str(ctx.guild.id)
         stats = await get_latepass_stats(guild_id)
 
@@ -175,16 +158,13 @@ class LatepassCog(commands.Cog):
         await ctx.message.reply(response)
 
     @latepass.command(name="top")
+    @guild_only_with_message()
     async def latepass_top(self, ctx: commands.Context, limit: int = 10):
         """Show the most reposted URLs in this server.
 
         Usage: !latepass top [limit]
         Example: !latepass top 5
         """
-        if not ctx.guild:
-            await ctx.message.reply("This command only works in servers.")
-            return
-
         # Clamp limit
         limit = max(5, min(limit, 25))
 
@@ -206,16 +186,13 @@ class LatepassCog(commands.Cog):
         await ctx.message.reply(response)
 
     @latepass.command(name="viral")
+    @guild_only_with_message()
     async def latepass_viral(self, ctx: commands.Context, min_reposts: int = 10):
         """Show viral URLs (highly reposted) in this server.
 
         Usage: !latepass viral [min_reposts]
         Example: !latepass viral 15
         """
-        if not ctx.guild:
-            await ctx.message.reply("This command only works in servers.")
-            return
-
         # Clamp min_reposts
         min_reposts = max(5, min(min_reposts, 100))
 
@@ -301,16 +278,7 @@ class LatepassCog(commands.Cog):
                     time_diff = now_local - posted_at_local
 
                     # Format time nicely
-                    if time_diff.days > 0:
-                        time_str = f"{time_diff.days} day{'s' if time_diff.days != 1 else ''} ago"
-                    elif time_diff.seconds >= 3600:
-                        hours = time_diff.seconds // 3600
-                        time_str = f"{hours} hour{'s' if hours != 1 else ''} ago"
-                    elif time_diff.seconds >= 60:
-                        minutes = time_diff.seconds // 60
-                        time_str = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-                    else:
-                        time_str = "just now"
+                    time_str = format_time_ago(time_diff)
 
                     # Update latepass scores BEFORE getting ranks
                     # Current user (reposter) gets -1

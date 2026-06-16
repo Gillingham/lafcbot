@@ -1,17 +1,15 @@
 """PandaPing cog for announcing Dodgers home wins."""
 
 import asyncio
-import json
 import logging
 from datetime import datetime, time, timedelta
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import aiosqlite
 import discord
 from discord.ext import commands, tasks
 
 from lafcbot.clients.espn_client import ESPNClient
+from lafcbot.utils.config import get_db_path, load_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,7 @@ class PandaPingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.espn_client = ESPNClient()
-        self.timezone = self._load_timezone()
+        self.timezone = load_timezone()
         self.channel_name = "other-sports"
         self.role_name = "Panda Ping"
 
@@ -37,25 +35,13 @@ class PandaPingCog(commands.Cog):
         self.monitoring_active = False
 
         # Database path for persistent state
-        self.db_path = Path(__file__).parent.parent.parent / "lafcbot.db"
+        self.db_path = get_db_path()
 
         # Start the main scheduler
         self.scheduler.start()
 
         # Start the daily reminder task
         self.daily_panda_reminder.start()
-
-    def _load_timezone(self) -> ZoneInfo:
-        """Load timezone from config.json."""
-        config_path = Path(__file__).parent.parent.parent / "config.json"
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-                tz_name = config.get("timezone", "America/Los_Angeles")
-                return ZoneInfo(tz_name)
-        except Exception as e:
-            logger.error(f"Error loading timezone from config: {e}, using default")
-            return ZoneInfo("America/Los_Angeles")
 
     def cog_unload(self):
         """Clean up when cog is unloaded."""

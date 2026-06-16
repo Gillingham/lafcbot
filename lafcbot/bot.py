@@ -1,35 +1,12 @@
-import json
 import logging
 import os
 import sys
-from pathlib import Path
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-
-def load_config() -> dict:
-    """Load configuration from config.json."""
-    # Navigate up from lafcbot/bot.py to project root
-    config_path = Path(__file__).parent.parent / "config.json"
-    try:
-        with open(config_path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"Warning: {config_path} not found, using defaults")
-        return {
-            "world_cup": {
-                "enabled": False,
-                "channel_name": "world-cup",
-                "daily_time_hour": 8,
-                "timezone": "America/Los_Angeles",
-            },
-            "channel_leagues": {},
-        }
-    except json.JSONDecodeError as e:
-        print(f"Error parsing config.json: {e}")
-        return {"world_cup": {"enabled": False}, "channel_leagues": {}}
+from lafcbot.utils.config import load_config
 
 
 def setup_logging(config: dict):

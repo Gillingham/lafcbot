@@ -1,16 +1,15 @@
 """Miscellaneous Discord commands for fun."""
 
-import json
 import random
 import re
-from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from discord.ext import commands
 
 from lafcbot.clients.espn_client import ESPNClient
-from lafcbot.clients.open_meteo_client import OpenMeteoClient, OpenMeteoError
+from lafcbot.clients.open_meteo_client import OpenMeteoClient
 from lafcbot.db import get_user, set_user_weather_location
+from lafcbot.utils.config import load_timezone
+from lafcbot.utils.errors import handle_api_errors
 
 
 class MiscCog(commands.Cog):
@@ -20,8 +19,7 @@ class MiscCog(commands.Cog):
         self.bot = bot
         self.weather_client = OpenMeteoClient()
         self.espn_client = ESPNClient()
-        # Load timezone from config
-        self.timezone = self._load_timezone()
+        self.timezone = load_timezone()
 
         # Initialize formatters
         from lafcbot.formatters.misc import MiscFormatter
@@ -32,19 +30,8 @@ class MiscCog(commands.Cog):
         self.sports_formatter = SportsFormatter(self.timezone)
         self.weather_formatter = WeatherFormatter(self.timezone)
 
-    def _load_timezone(self) -> ZoneInfo:
-        """Load timezone from config.json."""
-        config_path = Path(__file__).parent.parent.parent / "config.json"
-        try:
-            with open(config_path) as f:
-                config = json.load(f)
-                tz_name = config.get("timezone", "America/Los_Angeles")
-                return ZoneInfo(tz_name)
-        except Exception as e:
-            print(f"Error loading timezone from config: {e}, using default")
-            return ZoneInfo("America/Los_Angeles")
-
     @commands.command()
+    @handle_api_errors("scores")
     async def scores(self, ctx: commands.Context, league: str | None = None):
         """Show today's scores for a sports league in a single concise line.
 
@@ -77,57 +64,50 @@ class MiscCog(commands.Cog):
             return
 
         # Fetch scoreboard
-        try:
-            league_name, games = await self.espn_client.get_scoreboard(league)
+        league_name, games = await self.espn_client.get_scoreboard(league)
 
-            if not league_name:
-                await ctx.message.reply(
-                    f"Failed to fetch scores for {league.upper()}. Please try again later."
-                )
-                return
-
-            if not games:
-                await ctx.message.reply(f"No games found for {league_name} today.")
-                return
-
-            # Convert games to simple format for formatter
-            games_data = []
-            for game in games:
-                if game.is_scheduled and game.scheduled_time:
-                    local_time = game.scheduled_time.astimezone(self.timezone)
-                    time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")
-                    status = time_str
-                    games_data.append(
-                        {
-                            "away_team": game.away_team,
-                            "home_team": game.home_team,
-                            "away_score": 0,
-                            "home_score": 0,
-                            "status": status,
-                        }
-                    )
-                else:
-                    games_data.append(
-                        {
-                            "away_team": game.away_team,
-                            "home_team": game.home_team,
-                            "away_score": game.away_score or 0,
-                            "home_score": game.home_score or 0,
-                            "status": game.status or "Unknown",
-                        }
-                    )
-
-            # Use formatter
-            response = await self.sports_formatter.format_league_scores(
-                league_name, games_data
+        if not league_name:
+            await ctx.message.reply(
+                f"Failed to fetch scores for {league.upper()}. Please try again later."
             )
-            await ctx.message.reply(response)
+            return
 
-        except Exception as e:
-            import traceback
+        if not games:
+            await ctx.message.reply(f"No games found for {league_name} today.")
+            return
 
-            await ctx.message.reply(f"Error fetching scores: {e}")
-            print(traceback.format_exc())
+        # Convert games to simple format for formatter
+        games_data = []
+        for game in games:
+            if game.is_scheduled and game.scheduled_time:
+                local_time = game.scheduled_time.astimezone(self.timezone)
+                time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")
+                status = time_str
+                games_data.append(
+                    {
+                        "away_team": game.away_team,
+                        "home_team": game.home_team,
+                        "away_score": 0,
+                        "home_score": 0,
+                        "status": status,
+                    }
+                )
+            else:
+                games_data.append(
+                    {
+                        "away_team": game.away_team,
+                        "home_team": game.home_team,
+                        "away_score": game.away_score or 0,
+                        "home_score": game.home_score or 0,
+                        "status": game.status or "Unknown",
+                    }
+                )
+
+        # Use formatter
+        response = await self.sports_formatter.format_league_scores(
+            league_name, games_data
+        )
+        await ctx.message.reply(response)
 
     @commands.command()
     async def wut(self, ctx: commands.Context):
@@ -204,6 +184,7 @@ class MiscCog(commands.Cog):
         await ctx.message.reply(response)
 
     @commands.command()
+    @handle_api_errors("weather")
     async def weather(self, ctx: commands.Context, *, location: str | None = None):
         """Get current weather conditions for a location.
 
@@ -231,48 +212,39 @@ class MiscCog(commands.Cog):
                 return
 
         # Fetch weather data
-        try:
-            weather = await self.weather_client.get_current_weather(location)
+        weather = await self.weather_client.get_current_weather(location)
 
-            if weather is None:
-                await ctx.send(
-                    f"Could not find weather data for '{location}'. "
-                    "Please check the location and try again."
-                )
-                return
+        if weather is None:
+            await ctx.send(
+                f"Could not find weather data for '{location}'. "
+                "Please check the location and try again."
+            )
+            return
 
-            # Save location preference for this user
-            await set_user_weather_location(user_id, location)
+        # Save location preference for this user
+        await set_user_weather_location(user_id, location)
 
-            # Format weather response in compact format (keep original complex format)
-            parts = [
-                f"{weather.location}: {weather.temperature_f:.0f}F {weather.conditions.lower()}",
-                f"feels {weather.feels_like_f:.0f}F",
-                f"humidity {weather.humidity}%",
-                f"wind {weather.wind_direction_text()} {weather.wind_speed_mph:.0f} mph",
-            ]
+        # Format weather response in compact format (keep original complex format)
+        parts = [
+            f"{weather.location}: {weather.temperature_f:.0f}F {weather.conditions.lower()}",
+            f"feels {weather.feels_like_f:.0f}F",
+            f"humidity {weather.humidity}%",
+            f"wind {weather.wind_direction_text()} {weather.wind_speed_mph:.0f} mph",
+        ]
 
-            # Add AQI if available
-            if weather.air_quality_index is not None:
-                parts.append(
-                    f"AQI {weather.air_quality_index} {weather.air_quality_category}"
-                )
-
-            # Add daily forecast
+        # Add AQI if available
+        if weather.air_quality_index is not None:
             parts.append(
-                f"Today {weather.temp_max_f:.0f}F/{weather.temp_min_f:.0f}F, {weather.precipitation_probability}% rain"
+                f"AQI {weather.air_quality_index} {weather.air_quality_category}"
             )
 
-            response = "; ".join(parts)
-            await ctx.message.reply(response)
+        # Add daily forecast
+        parts.append(
+            f"Today {weather.temp_max_f:.0f}F/{weather.temp_min_f:.0f}F, {weather.precipitation_probability}% rain"
+        )
 
-        except OpenMeteoError as e:
-            await ctx.send(f"Error fetching weather: {e}. Please try again later.")
-        except Exception as e:
-            import traceback
-
-            await ctx.send(f"Error fetching weather: {e}")
-            print(traceback.format_exc())
+        response = "; ".join(parts)
+        await ctx.message.reply(response)
 
 
 def setup(bot):

@@ -127,6 +127,7 @@ class WorldCupFormatter(BaseFormatter):
         """
         venue_info = None
         us_broadcast_channels = []
+        details = None
 
         # Fetch detailed match info
         if match.page_slug:
@@ -145,7 +146,7 @@ class WorldCupFormatter(BaseFormatter):
                         ]
             except Exception:
                 # Fall back to simple formatting on API error
-                pass
+                details = None
 
         # Format match line (same as simple)
         home_name = match.home_team.name
@@ -165,7 +166,7 @@ class WorldCupFormatter(BaseFormatter):
         venue_line = self.format_venue_info(venue_info) if venue_info else None
         broadcast_line = (
             self.format_broadcast_channels(details.broadcast_channels)
-            if us_broadcast_channels
+            if details and us_broadcast_channels
             else None
         )
 
