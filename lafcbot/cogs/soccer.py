@@ -392,12 +392,12 @@ class SoccerCog(commands.Cog):
             def fmt_team_name(name: str, max_len: int = TEAM_WIDTH) -> str:
                 """Clean, strip, collapse spaces, and truncate team names."""
                 name = " ".join(str(name).strip().split())
-            
+
                 if len(name) > max_len:
                     return name[: max_len - 1] + "…"
-            
+
                 return name
-            
+
             for table in tables:  # Show all tables
                 table_name = table.get("leagueName", "Standings")
                 table_data = table.get("table", {}).get("all", [])
@@ -405,23 +405,62 @@ class SoccerCog(commands.Cog):
                 if not table_data:
                     continue
 
+                # Calculate maximum width needed for each numeric column
+                teams_to_show = table_data[:10]
+                max_p = max(
+                    (len(str(team.get("played", 0))) for team in teams_to_show),
+                    default=1,
+                )
+                max_w = max(
+                    (len(str(team.get("wins", 0))) for team in teams_to_show), default=1
+                )
+                max_d = max(
+                    (len(str(team.get("draws", 0))) for team in teams_to_show),
+                    default=1,
+                )
+                max_l = max(
+                    (len(str(team.get("losses", 0))) for team in teams_to_show),
+                    default=1,
+                )
+                max_gd = max(
+                    (len(str(team.get("goalConDiff", 0))) for team in teams_to_show),
+                    default=2,
+                )
+                max_pts = max(
+                    (len(str(team.get("pts", 0))) for team in teams_to_show), default=3
+                )
+
+                # Ensure minimum widths for column headers
+                w_p = max(max_p, 1)
+                w_w = max(max_w, 1)
+                w_d = max(max_d, 1)
+                w_l = max(max_l, 1)
+                w_gd = max(max_gd, 2)
+                w_pts = max(max_pts, 3)
+
                 lines = [f"**{table_name}**\n"]
                 lines.append("```")
-                
+
                 # Header
                 lines.append(
-                    f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>1} {'W':>1} {'D':>1} {'L':>1} {'GD':>2} {'Pts':>2}"
+                    f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>{w_p}} {'W':>{w_w}} {'D':>{w_d}} {'L':>{w_l}} {'GD':>{w_gd}} {'Pts':>{w_pts}}"
                 )
-                lines.append("-" * (2 + TEAM_WIDTH) + "-+-+-+-+-+--+---")
+
+                # Dynamic separator based on column widths
+                sep = (
+                    "-" * (2 + TEAM_WIDTH)
+                    + f"-+-{'-' * w_p}-+-{'-' * w_w}-+-{'-' * w_d}-+-{'-' * w_l}-+-{'-' * w_gd}-+-{'-' * w_pts}-"
+                )
+                lines.append(sep)
 
                 # Teams (top 10 or all for small groups)
-                for team in table_data[:10]:
+                for team in teams_to_show:
                     pos = team.get("idx", 0)
-                    
+
                     name = team.get("shortName") or team.get("name") or "Unknown"
                     name = self.clean_team_name(name, league_key)
                     name = fmt_team_name(name)
-                    
+
                     played = team.get("played", 0)
                     wins = team.get("wins", 0)
                     draws = team.get("draws", 0)
@@ -430,7 +469,7 @@ class SoccerCog(commands.Cog):
                     pts = team.get("pts", 0)
 
                     lines.append(
-                        f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>1} {wins:>1} {draws:>1} {losses:>1} {gd:>2} {pts:>2}"
+                        f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
                     )
 
                 lines.append("```")
