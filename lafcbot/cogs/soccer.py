@@ -1,6 +1,7 @@
 """Soccer-related Discord commands for match information and standings."""
 
 from datetime import datetime, timedelta
+from functools import cache
 from zoneinfo import ZoneInfo
 
 from discord.ext import commands
@@ -9,6 +10,14 @@ from lafcbot.bot import load_config
 from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
 from lafcbot.utils.countries import get_country_flag, get_country_rank
+
+# Team name overrides by league - maps full names to shortened versions
+TEAM_NAME_OVERRIDES = {
+    "mls": {
+        "Inter Miami CF": "Inter Miami",
+        "LA Galaxy": "Galaxy",
+    },
+}
 
 
 class SoccerCog(commands.Cog):
@@ -19,10 +28,18 @@ class SoccerCog(commands.Cog):
         self.fotmob_client = fotmob_client
 
     @staticmethod
+    @cache
     def clean_team_name(name: str, league_key: str) -> str:
         """Remove unnecessary suffixes from team names based on league context."""
+        # Check for league-specific team name overrides
+        if league_key in TEAM_NAME_OVERRIDES:
+            if name in TEAM_NAME_OVERRIDES[league_key]:
+                return TEAM_NAME_OVERRIDES[league_key][name]
+
+        # Remove suffix patterns
         if league_key == "nwsl" and name.endswith(" (W)"):
             return name[:-4]
+
         return name
 
     @staticmethod
