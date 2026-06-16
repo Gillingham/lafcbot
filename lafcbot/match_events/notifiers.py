@@ -4,8 +4,6 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-import discord
-
 from lafcbot.match_events.detectors import get_card_color
 from lafcbot.match_events.formatters import format_minute
 from lafcbot.utils.countries import get_country_flag
@@ -551,9 +549,6 @@ class MatchNotifier:
             stale_threshold: timedelta for checking if match ended too long ago
             was_monitored: If True, skip staleness check (we were tracking it live)
         """
-        live_config = self.config.get("live_monitoring", {})
-        channel_name = live_config.get("channel_name", "world-cup-live")
-
         # Check if match ended too long ago to send summary
         # Skip this check if we were actively monitoring (we know it just finished for us)
         if not was_monitored and details.match.start_time and details.events:
@@ -586,17 +581,6 @@ class MatchNotifier:
                 f"Sending post-match summary for {details.match.home_team.name} vs {details.match.away_team.name} "
                 f"(was actively monitored, skipping staleness check)"
             )
-
-        # Find channel
-        channel = None
-        for guild in self.bot.guilds:
-            channel = discord.utils.get(guild.channels, name=channel_name)
-            if channel:
-                break
-
-        if not channel:
-            logger.warning(f"Channel {channel_name} not found for match summary")
-            return
 
         match = details.match
         home_team = match.home_team.name
@@ -637,12 +621,12 @@ class MatchNotifier:
         # Send to guild-specific channels or fall back to legacy
         guild_channels = self._get_live_channels()
         if guild_channels:
-            logger.info(
-                f"Sending post-match summary to {len(guild_channels)} channel(s)"
-            )
+            logger.info(f"Sending match summary to {len(guild_channels)} channel(s)")
             await send_to_guild_channels(self.bot, message, guild_channels)
         else:
             # Legacy fallback
+            live_config = self.config.get("live_monitoring", {})
+            channel_name = live_config.get("channel_name", "world-cup-live")
             await send_to_channels(self.bot, message, [channel_name])
 
-        logger.info(f"Sent post-match summary for {home_team} vs {away_team}")
+        logger.info(f"Sent match summary for {home_team} vs {away_team}")

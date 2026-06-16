@@ -24,6 +24,10 @@
         "guild_id": "609238113705000981",
         "channel_name": "world-cup-2026",
         "live_channel_name": "world-cup-2026-live"
+      },
+      {
+        "guild_id": "424584010686136320",
+        "live_channel_name": "football-match"
       }
     ],
     "live_monitoring": {

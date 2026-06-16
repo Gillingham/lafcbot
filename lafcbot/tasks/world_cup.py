@@ -103,12 +103,15 @@ class WorldCupTask:
         # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}
         self.monitored_matches: dict[int, dict] = {}
 
-    def _build_guild_channels(self) -> list[tuple[str, str]]:
+    def _build_guild_channels(
+        self, include_regular: bool = True, include_live: bool = True
+    ) -> list[tuple[str, str]]:
         """
-        Build list of (guild_id, channel_name) tuples for all configured servers.
+        Build list of (guild_id, channel_name) tuples for configured servers.
 
-        Returns both regular and live channels for each server.
-        Falls back to legacy format if no guild_id present.
+        Args:
+            include_regular: Include regular (daily schedule) channels
+            include_live: Include live monitoring channels
 
         Returns:
             List of (guild_id, channel_name) tuples, or empty list for legacy fallback
@@ -124,13 +127,15 @@ class WorldCupTask:
                 return []
 
             # New format: guild-specific
-            regular_name = server_config.get("channel_name")
-            live_name = server_config.get("live_channel_name")
+            if include_regular:
+                regular_name = server_config.get("channel_name")
+                if regular_name:
+                    guild_channels.append((guild_id, regular_name))
 
-            if regular_name:
-                guild_channels.append((guild_id, regular_name))
-            if live_name:
-                guild_channels.append((guild_id, live_name))
+            if include_live:
+                live_name = server_config.get("live_channel_name")
+                if live_name:
+                    guild_channels.append((guild_id, live_name))
 
         return guild_channels
 
@@ -224,12 +229,17 @@ class WorldCupTask:
                     matches_to_display = upcoming_by_date[next_date]
                     display_date = next_date
                 else:
-                    # No matches - send to all configured servers
+                    # No matches - send to daily schedule channels only
                     no_matches_msg = self.formatter.format_no_matches_message()
-                    guild_channels = self._build_guild_channels()
+                    guild_channels = self._build_guild_channels(
+                        include_regular=True, include_live=False
+                    )
                     if guild_channels:
                         await send_to_guild_channels(
                             self.bot, no_matches_msg, guild_channels
+                        )
+                        logger.info(
+                            f"Sent 'no matches' message to {len(guild_channels)} channel(s)"
                         )
                     return
 
@@ -248,12 +258,18 @@ class WorldCupTask:
                     simple_count=5,
                 )
 
-                # Send to all configured guild+channel combinations
-                guild_channels = self._build_guild_channels()
+                # Send to daily schedule channels only (not live channels)
+                guild_channels = self._build_guild_channels(
+                    include_regular=True, include_live=False
+                )
                 if guild_channels:
                     await send_to_guild_channels(self.bot, response, guild_channels)
                     logger.info(
                         f"Sent daily World Cup matches to {len(guild_channels)} channel(s)"
+                    )
+                else:
+                    logger.warning(
+                        "No guild channels configured for World Cup daily updates"
                     )
 
             except Exception as e:
@@ -510,18 +526,6 @@ class WorldCupTask:
                     # Reset counter when we find live matches
                     self.empty_polls_count = 0
 
-                # Find live monitoring channel
-                channel_name = live_config.get("channel_name", "world-cup-live")
-                channel = None
-                for guild in self.bot.guilds:
-                    channel = discord.utils.get(guild.channels, name=channel_name)
-                    if channel:
-                        break
-
-                if not channel:
-                    logger.warning(f"Live channel {channel_name} not found")
-                    return
-
                 # Build complete list of matches to monitor:
                 # 1. All live matches from API
                 # 2. Matches we're tracking that might not be in live_matches (finishing matches)
@@ -535,9 +539,46 @@ class WorldCupTask:
 
                         matches_to_monitor[match_id] = SimpleNamespace(id=match_id)
 
-                # Check each match for new events
-                for match in matches_to_monitor.values():
-                    await self._monitor_match(match, channel)
+                # Get live channels for all configured servers
+                guild_channels = self._build_guild_channels(
+                    include_regular=False, include_live=True
+                )
+
+                if not guild_channels:
+                    # Fall back to legacy single-channel lookup
+                    channel_name = live_config.get("channel_name", "world-cup-live")
+                    channel = None
+                    for guild in self.bot.guilds:
+                        channel = discord.utils.get(guild.channels, name=channel_name)
+                        if channel:
+                            break
+
+                    if not channel:
+                        logger.warning(f"Live channel {channel_name} not found")
+                        return
+
+                    # Monitor with single legacy channel
+                    for match in matches_to_monitor.values():
+                        await self._monitor_match(match, channel)
+                else:
+                    # Monitor with guild-specific channels
+                    for match in matches_to_monitor.values():
+                        # Send to all configured live channels
+                        for guild_id, channel_name in guild_channels:
+                            guild = self.bot.get_guild(int(guild_id))
+                            if not guild:
+                                continue
+
+                            channel = discord.utils.get(
+                                guild.text_channels, name=channel_name
+                            )
+                            if not channel:
+                                logger.warning(
+                                    f"Live channel #{channel_name} not found in guild {guild.name}"
+                                )
+                                continue
+
+                            await self._monitor_match(match, channel)
 
                 # Check for matches that finished after monitoring all events
                 await self._check_finished_matches()
