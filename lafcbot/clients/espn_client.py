@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class Game:
     """Single game data."""
 
+    game_id: str
     away_team: str
     away_score: str
     home_team: str
@@ -117,6 +118,9 @@ class ESPNClient:
     def _parse_game(self, event: dict) -> Game | None:
         """Parse a single game from event data."""
         try:
+            # Extract game ID
+            game_id = event.get("id", "unknown")
+
             competition = event.get("competitions", [{}])[0]
             competitors = competition.get("competitors", [])
 
@@ -159,6 +163,7 @@ class ESPNClient:
             status = self._format_status(status_obj)
 
             return Game(
+                game_id=game_id,
                 away_team=away_team,
                 away_score=away_score,
                 home_team=home_team,

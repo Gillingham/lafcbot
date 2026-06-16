@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import aiosqlite
 import discord
 from discord.ext import commands, tasks
 
@@ -28,6 +29,9 @@ class PandaPingCog(commands.Cog):
         self.current_game = None
         self.next_game_time = None
         self.monitoring_active = False
+
+        # Database path for persistent state
+        self.db_path = Path(__file__).parent.parent.parent / "lafcbot.db"
 
         # Start the main scheduler
         self.scheduler.start()
@@ -80,6 +84,46 @@ class PandaPingCog(commands.Cog):
     async def before_scheduler(self):
         """Wait until bot is ready before starting scheduler."""
         await self.bot.wait_until_ready()
+        await self._init_database()
+
+    async def _init_database(self):
+        """Initialize the database table for tracking sent panda pings."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS panda_pings (
+                    game_id TEXT PRIMARY KEY,
+                    away_team TEXT NOT NULL,
+                    home_score INTEGER NOT NULL,
+                    away_score INTEGER NOT NULL,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            await db.commit()
+
+    async def _has_ping_been_sent(self, game_id: str) -> bool:
+        """Check if a panda ping has already been sent for this game."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM panda_pings WHERE game_id = ?", (game_id,)
+            )
+            result = await cursor.fetchone()
+            return result is not None
+
+    async def _mark_ping_sent(
+        self, game_id: str, away_team: str, home_score: int, away_score: int
+    ):
+        """Record that a panda ping has been sent for this game."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO panda_pings (game_id, away_team, home_score, away_score)
+                VALUES (?, ?, ?, ?)
+                """,
+                (game_id, away_team, home_score, away_score),
+            )
+            await db.commit()
 
     async def _check_dodgers_schedule(self):
         """Check ESPN MLB schedule for Dodgers home games."""
@@ -169,18 +213,32 @@ class PandaPingCog(commands.Cog):
                     f"Dodgers game finished: {dodgers_game.away_team} {dodgers_game.away_score} @ LAD {dodgers_game.home_score}"
                 )
 
-                # Check if Dodgers won
-                try:
-                    dodgers_score = int(dodgers_game.home_score)
-                    opponent_score = int(dodgers_game.away_score)
+                # Check if we already sent a ping for this game
+                game_id = dodgers_game.game_id
+                already_sent = await self._has_ping_been_sent(game_id)
 
-                    if dodgers_score > opponent_score:
-                        # Dodgers won! Send the panda ping
-                        await self._send_panda_ping(dodgers_game)
-                    else:
-                        logger.info("Dodgers did not win, no ping sent")
-                except ValueError as e:
-                    logger.error(f"Error parsing scores: {e}")
+                if already_sent:
+                    logger.info(f"Panda ping already sent for game {game_id}, skipping")
+                else:
+                    # Check if Dodgers won
+                    try:
+                        dodgers_score = int(dodgers_game.home_score)
+                        opponent_score = int(dodgers_game.away_score)
+
+                        if dodgers_score > opponent_score:
+                            # Dodgers won! Send the panda ping
+                            await self._send_panda_ping(dodgers_game)
+                        else:
+                            logger.info("Dodgers did not win, no ping sent")
+                            # Mark as seen even though we didn't ping (so we don't check again)
+                            await self._mark_ping_sent(
+                                game_id,
+                                dodgers_game.away_team,
+                                dodgers_score,
+                                opponent_score,
+                            )
+                    except ValueError as e:
+                        logger.error(f"Error parsing scores: {e}")
 
                 # Stop monitoring and schedule next check
                 self.monitoring_active = False
@@ -232,6 +290,14 @@ class PandaPingCog(commands.Cog):
             # Send the message
             await channel.send(message)
             logger.info(f"Sent panda ping to #{self.channel_name}: {scoreline}")
+
+            # Mark as sent in database
+            await self._mark_ping_sent(
+                game.game_id,
+                game.away_team,
+                int(game.home_score),
+                int(game.away_score),
+            )
 
         except Exception as e:
             logger.error(f"Error sending panda ping: {e}", exc_info=True)
