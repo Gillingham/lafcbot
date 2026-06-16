@@ -17,7 +17,7 @@ from lafcbot.match_events.detectors import (
     normalize_half_type,
 )
 from lafcbot.match_events.notifiers import MatchNotifier
-from lafcbot.utils.countries import get_country_flag
+from lafcbot.utils.countries import get_country_flag, get_country_rank
 from lafcbot.utils.discord_helpers import send_to_channels
 
 # Threshold for considering notifications "stale" (do not send if event/match is older than this)
@@ -210,14 +210,21 @@ class WorldCupTask:
                         except Exception:
                             pass
 
-                    home_name = match.home_team.name
-                    away_name = match.away_team.name
                     home_flag = get_country_flag(home_name)
+                    home_rank = get_country_rank(home_name)
                     away_flag = get_country_flag(away_name)
+                    away_rank = get_country_rank(away_name)
                     if home_flag:
-                        home_name = f"{home_flag} {home_name}"
+                        home_rank_text = (
+                            f" (#{home_rank})" if home_rank is not None else ""
+                        )
+                        home_name = f"{home_flag} {home_name}{home_rank_text}"
                     if away_flag:
-                        away_name = f"{away_flag} {away_name}"
+                        away_rank_text = (
+                            f" (#{away_rank})" if away_rank is not None else ""
+                        )
+                        away_name = f"{away_flag} {away_name}{away_rank_text}"
+
 
                     if match.start_time:
                         match_time = match.start_time.astimezone(tz)
@@ -238,14 +245,20 @@ class WorldCupTask:
                 # Show remaining upcoming matches without venue info (6-10)
                 if len(upcoming) > 5:
                     for match in upcoming[5:10]:
-                        home_name = match.home_team.name
-                        away_name = match.away_team.name
                         home_flag = get_country_flag(home_name)
+                        home_rank = get_country_rank(home_name)
                         away_flag = get_country_flag(away_name)
+                        away_rank = get_country_rank(away_name)
                         if home_flag:
-                            home_name = f"{home_flag} {home_name}"
+                            home_rank_text = (
+                                f" (#{home_rank})" if home_rank is not None else ""
+                            )
+                            home_name = f"{home_flag} {home_name}{home_rank_text}"
                         if away_flag:
-                            away_name = f"{away_flag} {away_name}"
+                            away_rank_text = (
+                                f" (#{away_rank})" if away_rank is not None else ""
+                            )
+                            away_name = f"{away_flag} {away_name}{away_rank_text}"
 
                         if match.start_time:
                             match_time = match.start_time.astimezone(tz)

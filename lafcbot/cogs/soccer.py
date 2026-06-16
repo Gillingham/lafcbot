@@ -404,7 +404,7 @@ class SoccerCog(commands.Cog):
             # Format standings for each table (e.g., Eastern/Western for MLS, Groups for World Cup)
             all_tables = []
 
-            TEAM_WIDTH = 15
+            TEAM_WIDTH = 13
 
             def fmt_team_name(name: str, max_len: int = TEAM_WIDTH) -> str:
                 """Clean, strip, collapse spaces, and truncate team names."""
