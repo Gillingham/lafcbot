@@ -220,23 +220,13 @@ class PandaPingCog(commands.Cog):
                 if already_sent:
                     logger.info(f"Panda ping already sent for game {game_id}, skipping")
                 else:
-                    # Check if Dodgers won
+                    # Send panda ping for both wins and losses
                     try:
                         dodgers_score = int(dodgers_game.home_score)
                         opponent_score = int(dodgers_game.away_score)
+                        is_win = dodgers_score > opponent_score
 
-                        if dodgers_score > opponent_score:
-                            # Dodgers won! Send the panda ping
-                            await self._send_panda_ping(dodgers_game)
-                        else:
-                            logger.info("Dodgers did not win, no ping sent")
-                            # Mark as seen even though we didn't ping (so we don't check again)
-                            await self._mark_ping_sent(
-                                game_id,
-                                dodgers_game.away_team,
-                                dodgers_score,
-                                opponent_score,
-                            )
+                        await self._send_panda_ping(dodgers_game, is_win)
                     except ValueError as e:
                         logger.error(f"Error parsing scores: {e}")
 
@@ -261,8 +251,13 @@ class PandaPingCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error monitoring game: {e}", exc_info=True)
 
-    async def _send_panda_ping(self, game):
-        """Send the panda ping message to #other-sports."""
+    async def _send_panda_ping(self, game, is_win: bool):
+        """Send the panda ping message to #other-sports.
+
+        Args:
+            game: Game object with score information
+            is_win: True if Dodgers won, False if they lost
+        """
         try:
             # Find the channel
             channel = None
@@ -283,13 +278,25 @@ class PandaPingCog(commands.Cog):
                 )
                 return
 
-            # Build the message
+            # Build the message with spoiler tags
             scoreline = f"{game.away_team} {game.away_score} - {game.home_score} LAD"
-            message = f"{role.mention} Dodgers win at home! Final: {scoreline}"
+
+            if is_win:
+                # Win message with role mention (triggers notification)
+                result_text = f"Dodgers win at home! Final: {scoreline}"
+                message = f"{role.mention} ||{result_text}||"
+            else:
+                # Loss message without role mention (no notification)
+                # Padded to match win message length to prevent spoiling by length
+                result_text = f"Dodgers lose at home.  Final: {scoreline}"
+                message = f"||{result_text}||"
 
             # Send the message
             await channel.send(message)
-            logger.info(f"Sent panda ping to #{self.channel_name}: {scoreline}")
+            logger.info(
+                f"Sent panda ping to #{self.channel_name}: {scoreline} "
+                f"({'win' if is_win else 'loss'})"
+            )
 
             # Mark as sent in database
             await self._mark_ping_sent(
