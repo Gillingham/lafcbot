@@ -386,6 +386,18 @@ class SoccerCog(commands.Cog):
 
             # Format standings for each table (e.g., Eastern/Western for MLS, Groups for World Cup)
             all_tables = []
+
+            TEAM_WIDTH = 15
+
+            def fmt_team_name(name: str, max_len: int = TEAM_WIDTH) -> str:
+                """Clean, strip, collapse spaces, and truncate team names."""
+                name = " ".join(str(name).strip().split())
+            
+                if len(name) > max_len:
+                    return name[: max_len - 1] + "…"
+            
+                return name
+            
             for table in tables:  # Show all tables
                 table_name = table.get("leagueName", "Standings")
                 table_data = table.get("table", {}).get("all", [])
@@ -395,17 +407,21 @@ class SoccerCog(commands.Cog):
 
                 lines = [f"**{table_name}**\n"]
                 lines.append("```")
+                
                 # Header
                 lines.append(
-                    f"{'#':<3} {'Team':<20} {'P':<3} {'W':<3} {'D':<3} {'L':<3} {'GD':<4} {'Pts':<4}"
+                    f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>1} {'W':>1} {'D':>1} {'L':>1} {'GD':>2} {'Pts':>2}"
                 )
-                lines.append("-" * 50)
+                lines.append("-" * (2 + TEAM_WIDTH) + "-+-+-+-+-+--+---")
 
                 # Teams (top 10 or all for small groups)
                 for team in table_data[:10]:
                     pos = team.get("idx", 0)
-                    name = team.get("shortName", team.get("name", "Unknown"))
-                    name = self.clean_team_name(name, league_key)[:18]
+                    
+                    name = team.get("shortName") or team.get("name") or "Unknown"
+                    name = self.clean_team_name(name, league_key)
+                    name = fmt_team_name(name)
+                    
                     played = team.get("played", 0)
                     wins = team.get("wins", 0)
                     draws = team.get("draws", 0)
@@ -414,7 +430,7 @@ class SoccerCog(commands.Cog):
                     pts = team.get("pts", 0)
 
                     lines.append(
-                        f"{pos:<3} {name:<20} {played:<3} {wins:<3} {draws:<3} {losses:<3} {gd:<4} {pts:<4}"
+                        f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>1} {wins:>1} {draws:>1} {losses:>1} {gd:>2} {pts:>2}"
                     )
 
                 lines.append("```")
