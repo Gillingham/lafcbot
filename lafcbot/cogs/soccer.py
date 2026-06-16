@@ -1,7 +1,6 @@
 """Soccer-related Discord commands for match information and standings."""
 
 from datetime import datetime, timedelta
-from functools import cache
 from zoneinfo import ZoneInfo
 
 from discord.ext import commands
@@ -9,15 +8,6 @@ from discord.ext import commands
 from lafcbot.bot import load_config
 from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
-from lafcbot.utils.countries import get_country_flag, get_country_rank
-
-# Team name overrides by league - maps full names to shortened versions
-TEAM_NAME_OVERRIDES = {
-    "mls": {
-        "Inter Miami CF": "Inter Miami",
-        "LA Galaxy": "Galaxy",
-    },
-}
 
 
 class SoccerCog(commands.Cog):
@@ -27,20 +17,11 @@ class SoccerCog(commands.Cog):
         self.bot = bot
         self.fotmob_client = fotmob_client
 
-    @staticmethod
-    @cache
-    def clean_team_name(name: str, league_key: str) -> str:
-        """Remove unnecessary suffixes from team names based on league context."""
-        # Check for league-specific team name overrides
-        if league_key in TEAM_NAME_OVERRIDES:
-            if name in TEAM_NAME_OVERRIDES[league_key]:
-                return TEAM_NAME_OVERRIDES[league_key][name]
+        # Initialize formatter
+        from lafcbot.formatters.soccer import SoccerFormatter
 
-        # Remove suffix patterns
-        if league_key == "nwsl" and name.endswith(" (W)"):
-            return name[:-4]
-
-        return name
+        timezone = ZoneInfo("America/Los_Angeles")
+        self.formatter = SoccerFormatter(timezone)
 
     @staticmethod
     def get_league_key_from_id(league_id: int) -> str | None:
@@ -126,206 +107,23 @@ class SoccerCog(commands.Cog):
 
             # Filter matches for the target date
             target_matches = []
-            upcoming_by_date = {}
-
             for m in league_matches:
                 if not show_tomorrow and m.is_live:
-                    # Only include live matches when showing today
                     target_matches.append(m)
-                elif m.is_finished and m.start_time:
-                    # Convert to LA timezone for date comparison
+                elif m.start_time:
                     match_time_la = m.start_time.astimezone(la_tz)
                     if match_time_la.date() == target_date:
                         target_matches.append(m)
-                elif not m.is_finished and m.start_time:
-                    # Group upcoming matches by date
-                    match_time_la = m.start_time.astimezone(la_tz)
-                    match_date = match_time_la.date()
-                    if match_date == target_date:
-                        target_matches.append(m)
-                    else:
-                        if match_date not in upcoming_by_date:
-                            upcoming_by_date[match_date] = []
-                        upcoming_by_date[match_date].append(m)
 
-            # Determine which matches to show
-            if target_matches:
-                # Show target date's matches
-                matches_to_display = target_matches
-                display_date = target_date
-            elif upcoming_by_date:
-                # Show next day that has matches
-                next_date = min(upcoming_by_date.keys())
-                matches_to_display = upcoming_by_date[next_date]
-                display_date = next_date
-            else:
-                matches_to_display = []
-                display_date = None
-
-            # Check if we have any matches to display
-            if not matches_to_display or display_date is None:
-                await ctx.send(f"No matches found for {league_display}")
-                return
-
-            # Determine header based on what we're showing
-            if display_date == today_la:
-                date_header = "Today's Matches"
-            elif display_date == tomorrow_la:
-                date_header = "Tomorrow's Matches"
-            else:
-                date_str = display_date.strftime("%A, %b %d")
-                date_header = f"Next Matches - {date_str}"
-
-            lines = [f"**{league_display} Matches**\n", f"**{date_header}:**"]
-
-            # Separate finished/live matches from upcoming
-            finished_or_live = [
-                m for m in matches_to_display if m.is_live or m.is_finished
-            ]
-            upcoming = [
-                m for m in matches_to_display if not (m.is_live or m.is_finished)
-            ]
-
-            # Display finished/live matches first
-            for match in finished_or_live[:10]:
-                score = (
-                    f"{match.home_score}-{match.away_score}"
-                    if match.home_score is not None
-                    else "TBD"
-                )
-                status_emoji = "🔴" if match.is_live else "✅"
-
-                # Clean team names and add flag emojis for World Cup matches
-                home_name = self.clean_team_name(match.home_team.name, league_key)
-                away_name = self.clean_team_name(match.away_team.name, league_key)
-                if league_key == "world_cup":
-                    home_flag = get_country_flag(home_name)
-                    home_rank = get_country_rank(home_name)
-                    away_flag = get_country_flag(away_name)
-                    away_rank = get_country_rank(away_name)
-                    if home_flag:
-                        home_rank_text = (
-                            f" (#{home_rank})" if home_rank is not None else ""
-                        )
-                        home_name = f"{home_flag} {home_name}{home_rank_text}"
-                    if away_flag:
-                        away_rank_text = (
-                            f" (#{away_rank})" if away_rank is not None else ""
-                        )
-                        away_name = f"{away_flag} {away_name}{away_rank_text}"
-
-                # Add match time for live matches
-                match_line = f"{status_emoji} {home_name} {score} {away_name}"
-                if match.is_live and match.match_time_display:
-                    match_line += f" ({match.match_time_display})"
-
-                lines.append(match_line)
-                lines.append("")  # Add blank line between matches
-
-            # Display upcoming matches with detailed info (limit to 5 for venue/broadcast lookup)
-            for match in upcoming[:5]:
-                match_line_parts = []
-
-                # Get venue and broadcast information if available
-                venue_info = None
-                us_broadcast_channels = []
-                if match.page_slug:
-                    try:
-                        details = await self.fotmob_client.get_match_details(
-                            page_slug=match.page_slug
-                        )
-                        if details:
-                            if details.match.venue:
-                                venue_info = details.match.venue
-                            # Extract US broadcast channels
-                            if details.broadcast_channels:
-                                us_broadcast_channels = [
-                                    ch.channel_name
-                                    for ch in details.broadcast_channels
-                                    if ch.country_name
-                                    and "USA" in ch.country_name.upper()
-                                ]
-                    except Exception:
-                        pass  # Continue without venue/broadcast if fetch fails
-
-                # Clean team names and add flag emojis for World Cup
-                home_name = self.clean_team_name(match.home_team.name, league_key)
-                away_name = self.clean_team_name(match.away_team.name, league_key)
-                if league_key == "world_cup":
-                    home_flag = get_country_flag(home_name)
-                    home_rank = get_country_rank(home_name)
-                    away_flag = get_country_flag(away_name)
-                    away_rank = get_country_rank(away_name)
-                    if home_flag:
-                        home_rank_text = (
-                            f" (#{home_rank})" if home_rank is not None else ""
-                        )
-                        home_name = f"{home_flag} {home_name}{home_rank_text}"
-                    if away_flag:
-                        away_rank_text = (
-                            f" (#{away_rank})" if away_rank is not None else ""
-                        )
-                        away_name = f"{away_flag} {away_name}{away_rank_text}"
-
-                if match.start_time:
-                    match_time_la = match.start_time.astimezone(la_tz)
-                    time_str = match_time_la.strftime("%b %d, %I:%M %p PT")
-                    match_line_parts.append(f"{home_name} vs {away_name} - {time_str}")
-                else:
-                    match_line_parts.append(f"{home_name} vs {away_name}")
-
-                # Add match line
-                lines.append(match_line_parts[0])
-
-                # Add venue information if available
-                if venue_info:
-                    venue_parts = [f"  🏟️ {venue_info.name}"]
-                    if venue_info.city:
-                        venue_parts.append(venue_info.city)
-                    lines.append(", ".join(venue_parts))
-
-                # Add US broadcast channels if available
-                if us_broadcast_channels:
-                    lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
-
-                # Add blank line between matches
-                lines.append("")
-
-            # Show remaining upcoming matches without venue info (6-10)
-            if len(upcoming) > 5:
-                for match in upcoming[5:10]:
-                    # Clean team names and add flag emojis for World Cup matches
-                    home_name = self.clean_team_name(match.home_team.name, league_key)
-                    away_name = self.clean_team_name(match.away_team.name, league_key)
-                    if league_key == "world_cup":
-                        home_flag = get_country_flag(home_name)
-                        home_rank = get_country_rank(home_name)
-                        away_flag = get_country_flag(away_name)
-                        away_rank = get_country_rank(away_name)
-                        if home_flag:
-                            home_rank_text = (
-                                f" (#{home_rank})" if home_rank is not None else ""
-                            )
-                            home_name = f"{home_flag} {home_name}{home_rank_text}"
-                        if away_flag:
-                            away_rank_text = (
-                                f" (#{away_rank})" if away_rank is not None else ""
-                            )
-                            away_name = f"{away_flag} {away_name}{away_rank_text}"
-
-                    if match.start_time:
-                        match_time_la = match.start_time.astimezone(la_tz)
-                        time_str = match_time_la.strftime("%b %d, %I:%M %p PT")
-                        lines.append(f"{home_name} vs {away_name} - {time_str}")
-                    else:
-                        lines.append(f"{home_name} vs {away_name}")
-
-                    # Add blank line between matches
-                    lines.append("")
-
-            response = "\n".join(lines)
-            if len(response) > 2000:
-                response = response[:1997] + "..."
+            # Use formatter to generate response
+            response = await self.formatter.format_matches_list(
+                matches=target_matches,
+                league_name=league_display,
+                target_date=target_date,
+                is_today=(target_date == today_la),
+                is_tomorrow=(target_date == tomorrow_la),
+                league_key=league_key,
+            )
 
             await ctx.send(response)
 
@@ -401,142 +199,46 @@ class SoccerCog(commands.Cog):
                 await ctx.send(f"No standings tables found for {league_display}")
                 return
 
-            # Format standings for each table (e.g., Eastern/Western for MLS, Groups for World Cup)
+            # Format standings for each table
             all_tables = []
-
-            TEAM_WIDTH = 13
-
-            def fmt_team_name(name: str, max_len: int = TEAM_WIDTH) -> str:
-                """Clean, strip, collapse spaces, and truncate team names."""
-                name = " ".join(str(name).strip().split())
-
-                if len(name) > max_len:
-                    return name[: max_len - 1] + "…"
-
-                return name
-
-            for table in tables:  # Show all tables
+            for table in tables:
                 table_name = table.get("leagueName", "Standings")
                 table_data = table.get("table", {}).get("all", [])
 
                 if not table_data:
                     continue
 
-                # Calculate maximum width needed for each numeric column
-                teams_to_show = table_data[:10]
-                max_p = max(
-                    (len(str(team.get("played", 0))) for team in teams_to_show),
-                    default=1,
+                # Convert to simple format for formatter
+                standings_list = []
+                for team in table_data[:10]:
+                    standings_list.append(
+                        {
+                            "rank": team.get("idx", 0),
+                            "name": team.get("shortName")
+                            or team.get("name", "Unknown"),
+                            "played": team.get("played", 0),
+                            "wins": team.get("wins", 0),
+                            "draws": team.get("draws", 0),
+                            "losses": team.get("losses", 0),
+                            "goal_diff": team.get("goalConDiff", 0),
+                            "points": team.get("pts", 0),
+                        }
+                    )
+
+                # Use formatter
+                formatted = await self.formatter.format_standings_table(
+                    standings_list, table_name, league_key
                 )
-                max_w = max(
-                    (len(str(team.get("wins", 0))) for team in teams_to_show), default=1
-                )
-                max_d = max(
-                    (len(str(team.get("draws", 0))) for team in teams_to_show),
-                    default=1,
-                )
-                max_l = max(
-                    (len(str(team.get("losses", 0))) for team in teams_to_show),
-                    default=1,
-                )
-                max_gd = max(
-                    (len(str(team.get("goalConDiff", 0))) for team in teams_to_show),
-                    default=2,
-                )
-                max_pts = max(
-                    (len(str(team.get("pts", 0))) for team in teams_to_show), default=3
-                )
-
-                # Ensure minimum widths for column headers
-                w_p = max(max_p, 1)
-                w_w = max(max_w, 1)
-                w_d = max(max_d, 1)
-                w_l = max(max_l, 1)
-                w_gd = max(max_gd, 2)
-                w_pts = max(max_pts, 3)
-
-                lines = [f"**{table_name}**\n"]
-                lines.append("```")
-
-                # Header
-                lines.append(
-                    f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>{w_p}} {'W':>{w_w}} {'D':>{w_d}} {'L':>{w_l}} {'GD':>{w_gd}} {'Pts':>{w_pts}}"
-                )
-
-                # Separator: + at exact positions where spaces separate columns
-                # Column boundaries: after Team, then before each stat column
-                boundary_positions = [
-                    3 + TEAM_WIDTH,  # After Team
-                    3 + TEAM_WIDTH + 1 + w_p,  # Before W
-                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w,  # Before D
-                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d,  # Before L
-                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d + 1 + w_l,  # Before GD
-                    3
-                    + TEAM_WIDTH
-                    + 1
-                    + w_p
-                    + 1
-                    + w_w
-                    + 1
-                    + w_d
-                    + 1
-                    + w_l
-                    + 1
-                    + w_gd,  # Before Pts
-                ]
-                sep_length = (
-                    3
-                    + TEAM_WIDTH
-                    + 1
-                    + w_p
-                    + 1
-                    + w_w
-                    + 1
-                    + w_d
-                    + 1
-                    + w_l
-                    + 1
-                    + w_gd
-                    + 1
-                    + w_pts
-                )
-                sep = "".join(
-                    "+" if i in boundary_positions else "-" for i in range(sep_length)
-                )
-                lines.append(sep)
-
-                # Teams (top 10 or all for small groups)
-                for team in teams_to_show:
-                    pos = team.get("idx", 0)
-
-                    name = team.get("shortName") or team.get("name") or "Unknown"
-                    name = self.clean_team_name(name, league_key)
-                    name = fmt_team_name(name)
-
-                    played = team.get("played", 0)
-                    wins = team.get("wins", 0)
-                    draws = team.get("draws", 0)
-                    losses = team.get("losses", 0)
-                    gd = team.get("goalConDiff", 0)
-                    pts = team.get("pts", 0)
-
-                    # Build line with standard column widths
-                    line = f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
-
-                    lines.append(line)
-
-                lines.append("```")
-                all_tables.append("\n".join(lines))
+                all_tables.append(formatted)
 
             # Batch tables into messages that fit Discord's 2000 char limit
             current_batch = []
             current_length = 0
 
             for table_text in all_tables:
-                table_length = len(table_text) + 1  # +1 for newline separator
+                table_length = len(table_text) + 1
 
-                # If adding this table would exceed limit, send current batch
-                if current_length + table_length > 1900:  # Leave some buffer
+                if current_length + table_length > 1900:
                     if current_batch:
                         await ctx.send("\n".join(current_batch))
                     current_batch = [table_text]
@@ -578,91 +280,14 @@ class SoccerCog(commands.Cog):
                 return
 
             match = details.match
-            league_key = (
-                self.get_league_key_from_id(match.league_id)
-                if match.league_id
-                else None
-            )
+            league_key = ""
+            if match.league_id:
+                key = self.get_league_key_from_id(match.league_id)
+                if key:
+                    league_key = key
 
-            home_team = self.clean_team_name(match.home_team.name, league_key or "")
-            away_team = self.clean_team_name(match.away_team.name, league_key or "")
-
-            # Get flags if World Cup match
-            home_flag = ""
-            away_flag = ""
-            if match.league_id == 77:  # World Cup
-                home_flag = get_country_flag(home_team)
-                away_flag = get_country_flag(away_team)
-
-            home_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.home_team.id
-                ]
-            )
-            away_goals = len(
-                [
-                    e
-                    for e in details.events
-                    if e.type.lower() == "goal" and e.team_id == match.away_team.id
-                ]
-            )
-
-            # Build message
-            status_emoji = (
-                "🏁" if match.is_finished else "🔴" if match.is_live else "📅"
-            )
-
-            home_display = f"{home_flag} {home_team}" if home_flag else home_team
-            away_display = f"{away_flag} {away_team}" if away_flag else away_team
-
-            lines = [
-                f"{status_emoji} **{home_display} {home_goals}-{away_goals} {away_display}**\n"
-            ]
-
-            # Add penalty result if applicable
-            if details.penalties:
-                lines.append(
-                    f"**Penalties:** {home_team} {details.penalties.home_score}-{details.penalties.away_score} {away_team}\n"
-                )
-
-            # Add goals
-            goal_events = [e for e in details.events if e.type.lower() == "goal"]
-            if goal_events:
-                lines.append("**⚽ Goals:**")
-                for goal in goal_events:
-                    scorer = goal.player_name or "Unknown"
-                    minute = goal.minute
-                    goal_line = f"{minute}' - {scorer}"
-
-                    if goal.own_goal:
-                        goal_line += " (OG)"
-                    elif goal.assist_name:
-                        goal_line += f" ({goal.assist_name})"
-
-                    lines.append(goal_line)
-                lines.append("")
-
-            # Add official highlights if available
-            if details.highlight:
-                lines.append(
-                    f"📺 **Official Highlights:** [Watch]({details.highlight.url})"
-                )
-
-            # Add venue info if available
-            if match.venue:
-                venue_text = match.venue.name
-                if match.venue.city:
-                    venue_text += f", {match.venue.city}"
-                lines.append(f"🏟️ **Venue:** {venue_text}")
-
-            message = "\n".join(lines)
-
-            # Truncate if too long
-            if len(message) > 2000:
-                message = message[:1997] + "..."
-
+            # Use formatter
+            message = await self.formatter.format_match_details(details, league_key)
             await ctx.send(message)
 
         except Exception as e:
@@ -749,28 +374,21 @@ class SoccerCog(commands.Cog):
                 await ctx.send(f"No statistics available yet for {league_display}")
                 return
 
-            # Format response
-            stat_display = (
-                fotmob_stat_type.title()
-            )  # "goals" -> "Goals", "assists" -> "Assists"
-            emoji = "⚽" if fotmob_stat_type == "goals" else "🅰️"
-
-            lines = [
-                f"{emoji} **Top {len(player_stats)} {stat_display} - {league_display}**\n"
-            ]
-
-            for i, stat in enumerate(player_stats, 1):
-                team_text = f" ({stat.team_name})" if stat.team_name else ""
-                stat_text = (
-                    "goal"
-                    if stat.stat_value == 1 and fotmob_stat_type == "goals"
-                    else fotmob_stat_type
-                )
-                lines.append(
-                    f"{i}. {stat.player_name}{team_text} - {stat.stat_value} {stat_text}"
+            # Convert to simple format for formatter
+            stats_list = []
+            for stat in player_stats:
+                stats_list.append(
+                    {
+                        "player_name": stat.player_name,
+                        "team_name": stat.team_name or "Unknown",
+                        fotmob_stat_type: stat.stat_value,
+                    }
                 )
 
-            message = "\n".join(lines)
+            # Use formatter
+            message = await self.formatter.format_player_stats(
+                stats_list, fotmob_stat_type, league_display
+            )
             await ctx.send(message)
 
         except Exception as e:

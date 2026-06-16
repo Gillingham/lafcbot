@@ -32,6 +32,11 @@ class LatepassCog(commands.Cog):
         # Load timezone and config
         self.timezone = self._load_timezone()
 
+        # Initialize formatter
+        from lafcbot.formatters.latepass import LatePassFormatter
+
+        self.formatter = LatePassFormatter(self.timezone)
+
     def _load_timezone(self) -> ZoneInfo:
         """Load timezone and latepass config from config.json."""
         config_path = Path(__file__).parent.parent.parent / "config.json"
@@ -94,23 +99,14 @@ class LatepassCog(commands.Cog):
 
         score, rank = await get_latepass_rank(user_id, guild_id)
 
-        if rank == 0:
-            if user:
-                await ctx.message.reply(
-                    f"{target_user.display_name} hasn't been involved in any latepasses yet."
-                )
-            else:
-                await ctx.message.reply(
-                    "You haven't been involved in any latepasses yet."
-                )
-        else:
-            score_text = f"{score:+d}"
-            if user:
-                await ctx.message.reply(
-                    f"{target_user.display_name}: {score_text} (#{rank})"
-                )
-            else:
-                await ctx.message.reply(f"Your latepass score: {score_text} (#{rank})")
+        # Format response using LatePassFormatter
+        response = self.formatter.format_user_score(
+            target_user.display_name,
+            score,
+            rank,
+            is_self=(user is None),
+        )
+        await ctx.message.reply(response)
 
     @latepass.command(name="leaderboard")
     async def latepass_leaderboard(self, ctx: commands.Context, limit: int = 10):
@@ -133,13 +129,11 @@ class LatepassCog(commands.Cog):
             await ctx.message.reply("No latepass scores yet in this server.")
             return
 
-        # Build leaderboard message
-        lines = [f"**Latepass Leaderboard - Top {len(leaderboard)}**"]
-
+        # Fetch member names and build scores list
+        scores = []
         for entry in leaderboard:
             user_id = entry["user_id"]
             score = entry["score"]
-            rank = entry["rank"]
 
             # Try to get the member name
             try:
@@ -148,9 +142,11 @@ class LatepassCog(commands.Cog):
             except (discord.NotFound, discord.HTTPException, ValueError):
                 name = f"User {user_id}"
 
-            lines.append(f"{rank}. {name}: {score:+d}")
+            scores.append((user_id, name, score))
 
-        await ctx.message.reply("\n".join(lines))
+        # Format using LatePassFormatter
+        response = self.formatter.format_leaderboard(scores, limit)
+        await ctx.message.reply(response)
 
     @latepass.command(name="stats")
     async def latepass_stats(self, ctx: commands.Context):
@@ -165,22 +161,18 @@ class LatepassCog(commands.Cog):
         guild_id = str(ctx.guild.id)
         stats = await get_latepass_stats(guild_id)
 
-        lines = [
-            "**Latepass Statistics**",
-            f"Total unique URLs: {stats['total_urls']}",
-            f"Total reposts: {stats['total_reposts']}",
-            f"Users with scores: {stats['total_users']}",
-        ]
-
-        if stats["most_reposted"]:
-            mr = stats["most_reposted"]
-            # Truncate URL if too long
-            url_display = mr["url"] if len(mr["url"]) <= 50 else mr["url"][:47] + "..."
-            lines.append(
-                f"Most reposted: {url_display} by {mr['username']} ({mr['count']} times)"
-            )
-
-        await ctx.message.reply("\n".join(lines))
+        # Format using LatePassFormatter
+        avg_per_url = (
+            stats["total_reposts"] / stats["total_urls"]
+            if stats["total_urls"] > 0
+            else 0
+        )
+        response = self.formatter.format_stats(
+            stats["total_reposts"],
+            stats["total_urls"],
+            avg_per_url,
+        )
+        await ctx.message.reply(response)
 
     @latepass.command(name="top")
     async def latepass_top(self, ctx: commands.Context, limit: int = 10):
@@ -203,22 +195,15 @@ class LatepassCog(commands.Cog):
             await ctx.message.reply("No reposted URLs yet in this server.")
             return
 
-        lines = [f"**Most Reposted URLs - Top {len(top_urls)}**"]
+        # Build URLs data list
+        urls_data = [
+            (entry["url"], entry["repost_count"], entry["username"])
+            for entry in top_urls
+        ]
 
-        for i, entry in enumerate(top_urls, start=1):
-            url = entry["url"]
-            count = entry["repost_count"]
-            username = entry["username"]
-
-            # Truncate URL if too long
-            url_display = url if len(url) <= 60 else url[:57] + "..."
-            times_text = "time" if count == 1 else "times"
-
-            lines.append(
-                f"{i}. {url_display}\n   Posted by {username}, reposted {count} {times_text}"
-            )
-
-        await ctx.message.reply("\n".join(lines))
+        # Format using LatePassFormatter
+        response = self.formatter.format_top_urls(urls_data, limit)
+        await ctx.message.reply(response)
 
     @latepass.command(name="viral")
     async def latepass_viral(self, ctx: commands.Context, min_reposts: int = 10):
@@ -243,22 +228,15 @@ class LatepassCog(commands.Cog):
             )
             return
 
-        lines = [f"**Viral URLs ({min_reposts}+ reposts)**"]
+        # Build URLs data list
+        urls_data = [
+            (entry["url"], entry["repost_count"], entry["username"])
+            for entry in viral_urls
+        ]
 
-        for i, entry in enumerate(viral_urls, start=1):
-            url = entry["url"]
-            count = entry["repost_count"]
-            username = entry["username"]
-
-            # Truncate URL if too long
-            url_display = url if len(url) <= 60 else url[:57] + "..."
-            times_text = "time" if count == 1 else "times"
-
-            lines.append(
-                f"{i}. {url_display}\n   Posted by {username}, reposted {count} {times_text}"
-            )
-
-        await ctx.message.reply("\n".join(lines))
+        # Format using LatePassFormatter
+        response = self.formatter.format_viral_urls(urls_data, min_reposts)
+        await ctx.message.reply(response)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

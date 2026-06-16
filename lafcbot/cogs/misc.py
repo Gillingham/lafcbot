@@ -23,6 +23,15 @@ class MiscCog(commands.Cog):
         # Load timezone from config
         self.timezone = self._load_timezone()
 
+        # Initialize formatters
+        from lafcbot.formatters.misc import MiscFormatter
+        from lafcbot.formatters.sports import SportsFormatter
+        from lafcbot.formatters.weather import WeatherFormatter
+
+        self.misc_formatter = MiscFormatter(self.timezone)
+        self.sports_formatter = SportsFormatter(self.timezone)
+        self.weather_formatter = WeatherFormatter(self.timezone)
+
     def _load_timezone(self) -> ZoneInfo:
         """Load timezone from config.json."""
         config_path = Path(__file__).parent.parent.parent / "config.json"
@@ -81,21 +90,38 @@ class MiscCog(commands.Cog):
                 await ctx.message.reply(f"No games found for {league_name} today.")
                 return
 
-            # Format games as single line
-            game_strings = []
+            # Convert games to simple format for formatter
+            games_data = []
             for game in games:
                 if game.is_scheduled and game.scheduled_time:
-                    # For scheduled games, show time without scores
                     local_time = game.scheduled_time.astimezone(self.timezone)
                     time_str = local_time.strftime("%a %-m/%-d %-I:%M %p")
-                    game_str = f"{game.away_team} @ {game.home_team} ({time_str})"
+                    status = time_str
+                    games_data.append(
+                        {
+                            "away_team": game.away_team,
+                            "home_team": game.home_team,
+                            "away_score": 0,
+                            "home_score": 0,
+                            "status": status,
+                        }
+                    )
                 else:
-                    # For in-progress or final games, show scores and status
-                    game_str = f"{game.away_team} {game.away_score} @ {game.home_team} {game.home_score} {game.status}"
-                game_strings.append(game_str)
+                    games_data.append(
+                        {
+                            "away_team": game.away_team,
+                            "home_team": game.home_team,
+                            "away_score": game.away_score or 0,
+                            "home_score": game.home_score or 0,
+                            "status": game.status or "Unknown",
+                        }
+                    )
 
-            output = f"{league_name}: {' | '.join(game_strings)}"
-            await ctx.message.reply(output)
+            # Use formatter
+            response = await self.sports_formatter.format_league_scores(
+                league_name, games_data
+            )
+            await ctx.message.reply(response)
 
         except Exception as e:
             import traceback
@@ -137,12 +163,9 @@ class MiscCog(commands.Cog):
         rolls = [random.randint(1, sides) for _ in range(count)]
         total = sum(rolls) + mod
 
-        # Format response
-        rolls_str = ", ".join(str(r) for r in rolls)
-        mod_str = f"{mod:+d}" if mod else ""
-        await ctx.message.reply(
-            f"Rolled {notation}: [{rolls_str}] {mod_str} = **{total}**"
-        )
+        # Format response using MiscFormatter
+        response = self.misc_formatter.format_dice_roll(notation, rolls, mod, total)
+        await ctx.message.reply(response)
 
     @commands.command(name="8ball")
     async def eightball(self, ctx: commands.Context, *, _question: str):
@@ -177,7 +200,8 @@ class MiscCog(commands.Cog):
         ]
 
         answer = random.choice(responses)
-        await ctx.message.reply(f"🎱 {answer}")
+        response = self.misc_formatter.format_8ball_response(answer)
+        await ctx.message.reply(response)
 
     @commands.command()
     async def weather(self, ctx: commands.Context, *, location: str | None = None):
@@ -220,8 +244,7 @@ class MiscCog(commands.Cog):
             # Save location preference for this user
             await set_user_weather_location(user_id, location)
 
-            # Format weather response in compact format
-            # Example: Pasadena, CA, US: 72F overcast; feels 71F; humidity 63%; wind WSW 8 mph; AQI 64 moderate; Today 79F/59F, 0% rain
+            # Format weather response in compact format (keep original complex format)
             parts = [
                 f"{weather.location}: {weather.temperature_f:.0f}F {weather.conditions.lower()}",
                 f"feels {weather.feels_like_f:.0f}F",

@@ -26,6 +26,11 @@ class PandaPingCog(commands.Cog):
         self.channel_name = "other-sports"
         self.role_name = "Panda Ping"
 
+        # Initialize formatter
+        from lafcbot.formatters.sports import SportsFormatter
+
+        self.formatter = SportsFormatter(self.timezone)
+
         # State tracking
         self.current_game = None
         self.next_game_time = None
@@ -338,23 +343,29 @@ class PandaPingCog(commands.Cog):
                 )
                 return
 
-            # Build the message with spoiler tags
-            scoreline = f"{game.away_team} {game.away_score} - {game.home_score} LAD"
+            # Use formatter to build result text
+            result_text = self.formatter.format_dodgers_game_result(
+                opponent=game.away_team,
+                dodgers_score=int(game.home_score),
+                opponent_score=int(game.away_score),
+                is_win=is_win,
+                is_home=True,
+            )
+
+            # Add "Final: " prefix to match original format
+            result_text = f"{result_text} - Final"
 
             if is_win:
                 # Win message with role mention (triggers notification)
-                result_text = f"Dodgers win at home! Final: {scoreline}"
                 message = f"{role.mention} ||{result_text}||"
             else:
                 # Loss message without role mention (no notification)
-                # Padded to match win message length to prevent spoiling by length
-                result_text = f"Dodgers lose at home.  Final: {scoreline}"
                 message = f"||{result_text}||"
 
             # Send the message
             await channel.send(message)
             logger.info(
-                f"Sent panda ping to #{self.channel_name}: {scoreline} "
+                f"Sent panda ping to #{self.channel_name}: {game.away_team} {game.away_score} - {game.home_score} LAD "
                 f"({'win' if is_win else 'loss'})"
             )
 

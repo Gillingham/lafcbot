@@ -17,7 +17,6 @@ from lafcbot.match_events.detectors import (
     normalize_half_type,
 )
 from lafcbot.match_events.notifiers import MatchNotifier
-from lafcbot.utils.countries import get_country_flag, get_country_rank
 from lafcbot.utils.discord_helpers import send_to_channels
 
 # Threshold for considering notifications "stale" (do not send if event/match is older than this)
@@ -61,6 +60,11 @@ class WorldCupTask:
         self.notifier = MatchNotifier(
             self.bot, self.config, self.timezone, self.reddit_client
         )
+
+        # Initialize formatter for daily matches
+        from lafcbot.formatters.world_cup import WorldCupFormatter
+
+        self.formatter = WorldCupFormatter(self.timezone)
 
         # State tracking for smart scheduling
         self.next_check_time = None
@@ -169,113 +173,25 @@ class WorldCupTask:
                 else:
                     await send_to_channels(
                         self.bot,
-                        "No World Cup matches scheduled.",
+                        self.formatter.format_no_matches_message(),
                         [regular_channel_name, live_channel_name],
                     )
                     return
-
-                # Determine header
-                if display_date == today:
-                    date_header = "Today's Matches"
-                else:
-                    date_str = display_date.strftime("%A, %b %d")
-                    date_header = f"Next Matches - {date_str}"
-
-                lines = ["**World Cup Matches**\n", f"**{date_header}:**"]
 
                 # Only show upcoming matches (no spoilers for finished matches)
                 upcoming = [
                     m for m in matches_to_display if not (m.is_live or m.is_finished)
                 ]
 
-                # Display upcoming matches with detailed info (limit to 5 for venue/broadcast lookup)
-                for match in upcoming[:5]:
-                    venue_info = None
-                    us_broadcast_channels = []
-                    if match.page_slug:
-                        try:
-                            details = await self.fotmob_client.get_match_details(
-                                page_slug=match.page_slug
-                            )
-                            if details:
-                                if details.match.venue:
-                                    venue_info = details.match.venue
-                                if details.broadcast_channels:
-                                    us_broadcast_channels = [
-                                        ch.channel_name
-                                        for ch in details.broadcast_channels
-                                        if ch.country_name
-                                        and "USA" in ch.country_name.upper()
-                                    ]
-                        except Exception:
-                            pass
-
-                    home_flag = get_country_flag(home_name)
-                    home_rank = get_country_rank(home_name)
-                    away_flag = get_country_flag(away_name)
-                    away_rank = get_country_rank(away_name)
-                    if home_flag:
-                        home_rank_text = (
-                            f" (#{home_rank})" if home_rank is not None else ""
-                        )
-                        home_name = f"{home_flag} {home_name}{home_rank_text}"
-                    if away_flag:
-                        away_rank_text = (
-                            f" (#{away_rank})" if away_rank is not None else ""
-                        )
-                        away_name = f"{away_flag} {away_name}{away_rank_text}"
-
-
-                    if match.start_time:
-                        match_time = match.start_time.astimezone(tz)
-                        time_str = match_time.strftime("%b %d, %I:%M %p PT")
-                        lines.append(f"{home_name} vs {away_name} - {time_str}")
-                    else:
-                        lines.append(f"{home_name} vs {away_name}")
-
-                    if venue_info:
-                        venue_parts = [f"  🏟️ {venue_info.name}"]
-                        if venue_info.city:
-                            venue_parts.append(venue_info.city)
-                        lines.append(", ".join(venue_parts))
-
-                    if us_broadcast_channels:
-                        lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
-
-                    # Add blank line between matches
-                    lines.append("")
-
-                # Show remaining upcoming matches without venue info (6-10)
-                if len(upcoming) > 5:
-                    for match in upcoming[5:10]:
-                        home_flag = get_country_flag(home_name)
-                        home_rank = get_country_rank(home_name)
-                        away_flag = get_country_flag(away_name)
-                        away_rank = get_country_rank(away_name)
-                        if home_flag:
-                            home_rank_text = (
-                                f" (#{home_rank})" if home_rank is not None else ""
-                            )
-                            home_name = f"{home_flag} {home_name}{home_rank_text}"
-                        if away_flag:
-                            away_rank_text = (
-                                f" (#{away_rank})" if away_rank is not None else ""
-                            )
-                            away_name = f"{away_flag} {away_name}{away_rank_text}"
-
-                        if match.start_time:
-                            match_time = match.start_time.astimezone(tz)
-                            time_str = match_time.strftime("%b %d, %I:%M %p PT")
-                            lines.append(f"{home_name} vs {away_name} - {time_str}")
-                        else:
-                            lines.append(f"{home_name} vs {away_name}")
-
-                        # Add blank line between matches
-                        lines.append("")
-
-                response = "\n".join(lines)
-                if len(response) > 2000:
-                    response = response[:1997] + "..."
+                # Format message using WorldCupFormatter
+                response = await self.formatter.format_daily_matches_message(
+                    matches=upcoming,
+                    display_date=display_date,
+                    is_today=(display_date == today),
+                    fotmob_client=self.fotmob_client,
+                    detailed_count=5,
+                    simple_count=5,
+                )
 
                 regular_channel_name = self.config.get("channel_name", "world-cup-2026")
                 live_channel_name = self.config.get("live_monitoring", {}).get(
