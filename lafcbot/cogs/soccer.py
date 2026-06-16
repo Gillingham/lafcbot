@@ -523,18 +523,6 @@ class SoccerCog(commands.Cog):
                     # Build line with standard column widths
                     line = f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
 
-                    # If line length > 33, truncate the team name string (not the column width)
-                    if len(line) > 33:
-                        overflow = len(line) - 33
-                        # Truncate the name string itself, keeping column widths constant
-                        max_name_len = len(name) - overflow
-                        if max_name_len > 0:
-                            truncated_name = name[: max_name_len - 1] + "…"
-                        else:
-                            truncated_name = "…"
-                        # Rebuild with same column widths but truncated name
-                        line = f"{pos:<3}{truncated_name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
-
                     lines.append(line)
 
                 lines.append("```")
