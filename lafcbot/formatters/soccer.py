@@ -1,6 +1,7 @@
 """Formatters for soccer cog commands."""
 
 from datetime import date
+from functools import cache
 
 from lafcbot.formatters.base import BaseFormatter
 
@@ -15,6 +16,21 @@ TEAM_NAME_OVERRIDES = {
 
 class SoccerFormatter(BaseFormatter):
     """Formats soccer command responses."""
+
+    @staticmethod
+    @cache
+    def clean_team_name(name: str, league_key: str) -> str:
+        """Remove unnecessary suffixes from team names based on league context."""
+        # Check for league-specific team name overrides
+        if league_key in TEAM_NAME_OVERRIDES:
+            if name in TEAM_NAME_OVERRIDES[league_key]:
+                return TEAM_NAME_OVERRIDES[league_key][name]
+
+        # Remove suffix patterns
+        if league_key == "nwsl" and name.endswith(" (W)"):
+            return name[:-4]
+
+        return name
 
     def _shorten_team_name(self, team_name: str, league_key: str) -> str:
         """
@@ -49,8 +65,8 @@ class SoccerFormatter(BaseFormatter):
         Returns:
             Formatted match line string
         """
-        home_name = self._shorten_team_name(match.home_team.name, league_key)
-        away_name = self._shorten_team_name(match.away_team.name, league_key)
+        home_name = self.clean_team_name(match.home_team.name, league_key)
+        away_name = self.clean_team_name(match.away_team.name, league_key)
 
         # Format score or status
         if match.is_live:
@@ -147,38 +163,111 @@ class SoccerFormatter(BaseFormatter):
 
         lines = [f"**{league_name} Standings:**", "```"]
 
-        # Determine column widths
-        max_team_len = max(
-            len(self._shorten_team_name(team.get("name", ""), league_key))
-            for team in standings_data
-        )
-        team_width = min(max_team_len + 2, 25)
+        # Fixed team width (matches original)
+        TEAM_WIDTH = 13
 
-        # Header
-        header = self.format_table_row(
-            ["#", "Team", "GP", "W", "D", "L", "GD", "Pts"],
-            [3, team_width, 4, 3, 3, 3, 4, 4],
+        def fmt_team_name(name: str, max_len: int = TEAM_WIDTH) -> str:
+            """Clean, strip, collapse spaces, and truncate team names."""
+            name = " ".join(str(name).strip().split())  # Collapse multi-spaces
+            if len(name) > max_len:
+                return name[: max_len - 1] + "…"  # Truncate with ellipsis
+            return name
+
+        # Calculate maximum width needed for each numeric column from actual data
+        max_p = max(
+            (len(str(team.get("played", 0))) for team in standings_data), default=1
         )
-        lines.append(header)
-        lines.append("-" * len(header))
+        max_w = max(
+            (len(str(team.get("wins", 0))) for team in standings_data), default=1
+        )
+        max_d = max(
+            (len(str(team.get("draws", 0))) for team in standings_data), default=1
+        )
+        max_l = max(
+            (len(str(team.get("losses", 0))) for team in standings_data), default=1
+        )
+        max_gd = max(
+            (len(str(team.get("goal_diff", 0))) for team in standings_data), default=2
+        )
+        max_pts = max(
+            (len(str(team.get("points", 0))) for team in standings_data), default=3
+        )
+
+        # Ensure minimum widths for column headers
+        w_p = max(max_p, 1)
+        w_w = max(max_w, 1)
+        w_d = max(max_d, 1)
+        w_l = max(max_l, 1)
+        w_gd = max(max_gd, 2)
+        w_pts = max(max_pts, 3)
+
+        # Header with dynamic widths
+        lines.append(
+            f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>{w_p}} {'W':>{w_w}} {'D':>{w_d}} {'L':>{w_l}} {'GD':>{w_gd}} {'Pts':>{w_pts}}"
+        )
+
+        # Separator with + at column boundaries
+        boundary_positions = [
+            3 + TEAM_WIDTH,  # After Team
+            3 + TEAM_WIDTH + 1 + w_p,  # Before W
+            3 + TEAM_WIDTH + 1 + w_p + 1 + w_w,  # Before D
+            3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d,  # Before L
+            3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d + 1 + w_l,  # Before GD
+            3
+            + TEAM_WIDTH
+            + 1
+            + w_p
+            + 1
+            + w_w
+            + 1
+            + w_d
+            + 1
+            + w_l
+            + 1
+            + w_gd,  # Before Pts
+        ]
+        sep_length = (
+            3
+            + TEAM_WIDTH
+            + 1
+            + w_p
+            + 1
+            + w_w
+            + 1
+            + w_d
+            + 1
+            + w_l
+            + 1
+            + w_gd
+            + 1
+            + w_pts
+        )
+        sep = "".join(
+            "+" if i in boundary_positions else "-" for i in range(sep_length)
+        )
+        lines.append(sep)
 
         # Team rows
         for team in standings_data:
-            rank = str(team.get("rank", ""))
-            name = self._shorten_team_name(team.get("name", ""), league_key)
-            gp = str(team.get("played", 0))
-            wins = str(team.get("wins", 0))
-            draws = str(team.get("draws", 0))
-            losses = str(team.get("losses", 0))
-            gd_val = team.get("goal_diff", 0)
-            gd = f"+{gd_val}" if gd_val > 0 else str(gd_val)
-            pts = str(team.get("points", 0))
+            rank = team.get("rank", 0)
+            name = team.get("name", "Unknown")
+            name = self.clean_team_name(
+                name, league_key
+            )  # Apply overrides & suffix removal
+            name = fmt_team_name(name)  # Collapse spaces & truncate
 
-            row = self.format_table_row(
-                [rank, name, gp, wins, draws, losses, gd, pts],
-                [3, team_width, 4, 3, 3, 3, 4, 4],
-            )
-            lines.append(row)
+            played = team.get("played", 0)
+            wins = team.get("wins", 0)
+            draws = team.get("draws", 0)
+            losses = team.get("losses", 0)
+            gd_val = team.get("goal_diff", 0)
+            # Format goal diff with + for positive values
+            gd = f"+{gd_val}" if gd_val > 0 else str(gd_val)
+            pts = team.get("points", 0)
+
+            # Format line with dynamic widths (match original f-string alignment)
+            line = f"{rank:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
+            lines.append(line)
 
         lines.append("```")
         response = "\n".join(lines)
@@ -200,8 +289,8 @@ class SoccerFormatter(BaseFormatter):
             Formatted match details string
         """
         match = match_details.match
-        home_name = self._shorten_team_name(match.home_team.name, league_key)
-        away_name = self._shorten_team_name(match.away_team.name, league_key)
+        home_name = self.clean_team_name(match.home_team.name, league_key)
+        away_name = self.clean_team_name(match.away_team.name, league_key)
 
         lines = [f"**{home_name} vs {away_name}**"]
 
