@@ -235,6 +235,9 @@ class WorldCupTask:
                     if us_broadcast_channels:
                         lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
 
+                    # Add blank line between matches
+                    lines.append("")
+
                 # Show remaining upcoming matches without venue info (6-10)
                 if len(upcoming) > 5:
                     for match in upcoming[5:10]:
@@ -253,6 +256,9 @@ class WorldCupTask:
                             lines.append(f"{home_name} vs {away_name} - {time_str}")
                         else:
                             lines.append(f"{home_name} vs {away_name}")
+
+                        # Add blank line between matches
+                        lines.append("")
 
                 response = "\n".join(lines)
                 if len(response) > 2000:
