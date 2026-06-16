@@ -102,7 +102,15 @@ class WorldCupFormatter(BaseFormatter):
         home_display = self.format_team_with_flag_and_rank(home_name)
         away_display = self.format_team_with_flag_and_rank(away_name)
 
-        if match.start_time:
+        # Format score or status
+        if match.is_live:
+            time_display = match.match_time_display or "LIVE"
+            score_part = f"{match.home_score}-{match.away_score} ({time_display})"
+            match_line = f"{home_display} vs {away_display} - {score_part}"
+        elif match.is_finished:
+            score_part = f"{match.home_score}-{match.away_score} (FT)"
+            match_line = f"{home_display} vs {away_display} - {score_part}"
+        elif match.start_time:
             match_time = match.start_time.astimezone(self.timezone)
             time_str = match_time.strftime("%b %d, %I:%M %p PT")
             match_line = f"{home_display} vs {away_display} - {time_str}"
@@ -148,14 +156,22 @@ class WorldCupFormatter(BaseFormatter):
                 # Fall back to simple formatting on API error
                 details = None
 
-        # Format match line (same as simple)
+        # Format match line
         home_name = match.home_team.name
         away_name = match.away_team.name
 
         home_display = self.format_team_with_flag_and_rank(home_name)
         away_display = self.format_team_with_flag_and_rank(away_name)
 
-        if match.start_time:
+        # Format score or status
+        if match.is_live:
+            time_display = match.match_time_display or "LIVE"
+            score_part = f"{match.home_score}-{match.away_score} ({time_display})"
+            match_line = f"{home_display} vs {away_display} - {score_part}"
+        elif match.is_finished:
+            score_part = f"{match.home_score}-{match.away_score} (FT)"
+            match_line = f"{home_display} vs {away_display} - {score_part}"
+        elif match.start_time:
             match_time = match.start_time.astimezone(self.timezone)
             time_str = match_time.strftime("%b %d, %I:%M %p PT")
             match_line = f"{home_display} vs {away_display} - {time_str}"
