@@ -17,7 +17,7 @@ from lafcbot.match_events.detectors import (
     normalize_half_type,
 )
 from lafcbot.match_events.notifiers import MatchNotifier
-from lafcbot.utils.discord_helpers import send_to_channels
+from lafcbot.utils.discord_helpers import send_to_guild_channels
 
 # Threshold for considering notifications "stale" (do not send if event/match is older than this)
 # Used for: match start notifications and post-match summaries
@@ -56,9 +56,36 @@ class WorldCupTask:
         tz_name = self.config.get("timezone", "America/Los_Angeles")
         self.timezone = ZoneInfo(tz_name)
 
+        # Load server-specific configurations
+        self.server_configs = self.config.get("servers", [])
+
+        # Backward compatibility: if no servers array, create one from legacy config
+        if not self.server_configs and self.config.get("enabled", False):
+            legacy_server = {
+                "channel_name": self.config.get("channel_name", "world-cup-2026"),
+                "live_channel_name": self.config.get("live_monitoring", {}).get(
+                    "channel_name", "world-cup-live"
+                ),
+            }
+            self.server_configs = [legacy_server]
+            logger.warning(
+                "Using legacy world_cup config format. Consider migrating to servers array."
+            )
+
+        if self.server_configs:
+            logger.info(
+                f"World Cup configured for {len(self.server_configs)} server(s)"
+            )
+        else:
+            logger.info("World Cup has no servers configured")
+
         # Initialize notification handler
         self.notifier = MatchNotifier(
-            self.bot, self.config, self.timezone, self.reddit_client
+            self.bot,
+            self.config,
+            self.timezone,
+            self.reddit_client,
+            server_configs=self.server_configs,
         )
 
         # Initialize formatter for daily matches
@@ -75,6 +102,37 @@ class WorldCupTask:
         # State tracking for monitored matches
         # Format: {match_id: {last_events, last_home_score, last_away_score, was_live, extra_time_sent, penalties_sent}}
         self.monitored_matches: dict[int, dict] = {}
+
+    def _build_guild_channels(self) -> list[tuple[str, str]]:
+        """
+        Build list of (guild_id, channel_name) tuples for all configured servers.
+
+        Returns both regular and live channels for each server.
+        Falls back to legacy format if no guild_id present.
+
+        Returns:
+            List of (guild_id, channel_name) tuples, or empty list for legacy fallback
+        """
+        guild_channels = []
+
+        for server_config in self.server_configs:
+            guild_id = server_config.get("guild_id")
+            if not guild_id:
+                # Legacy format support (no guild_id) - return empty list
+                # Caller will fall back to old send_to_channels()
+                logger.debug("Legacy world_cup config detected (no guild_id)")
+                return []
+
+            # New format: guild-specific
+            regular_name = server_config.get("channel_name")
+            live_name = server_config.get("live_channel_name")
+
+            if regular_name:
+                guild_channels.append((guild_id, regular_name))
+            if live_name:
+                guild_channels.append((guild_id, live_name))
+
+        return guild_channels
 
     def start(self):
         """Start the World Cup tasks if enabled."""
@@ -122,11 +180,6 @@ class WorldCupTask:
             if self.fotmob_client is None:
                 return
 
-            regular_channel_name = self.config.get("channel_name", "world-cup-2026")
-            live_channel_name = self.config.get("live_monitoring", {}).get(
-                "channel_name", "world-cup-live"
-            )
-
             # Get World Cup matches (league ID 77)
             league_id = 77
 
@@ -171,11 +224,13 @@ class WorldCupTask:
                     matches_to_display = upcoming_by_date[next_date]
                     display_date = next_date
                 else:
-                    await send_to_channels(
-                        self.bot,
-                        self.formatter.format_no_matches_message(),
-                        [regular_channel_name, live_channel_name],
-                    )
+                    # No matches - send to all configured servers
+                    no_matches_msg = self.formatter.format_no_matches_message()
+                    guild_channels = self._build_guild_channels()
+                    if guild_channels:
+                        await send_to_guild_channels(
+                            self.bot, no_matches_msg, guild_channels
+                        )
                     return
 
                 # Only show upcoming matches (no spoilers for finished matches)
@@ -193,16 +248,13 @@ class WorldCupTask:
                     simple_count=5,
                 )
 
-                regular_channel_name = self.config.get("channel_name", "world-cup-2026")
-                live_channel_name = self.config.get("live_monitoring", {}).get(
-                    "channel_name", "world-cup-live"
-                )
-                await send_to_channels(
-                    self.bot, response, [regular_channel_name, live_channel_name]
-                )
-                print(
-                    f"Sent daily World Cup matches to {regular_channel_name} and {live_channel_name}"
-                )
+                # Send to all configured guild+channel combinations
+                guild_channels = self._build_guild_channels()
+                if guild_channels:
+                    await send_to_guild_channels(self.bot, response, guild_channels)
+                    logger.info(
+                        f"Sent daily World Cup matches to {len(guild_channels)} channel(s)"
+                    )
 
             except Exception as e:
                 print(f"Error in daily World Cup task: {e}")

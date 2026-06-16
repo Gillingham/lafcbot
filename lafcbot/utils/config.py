@@ -21,15 +21,21 @@ def load_config() -> dict:
         return {
             "world_cup": {
                 "enabled": False,
-                "channel_name": "world-cup",
+                "channel_name": "world-cup",  # Keep for legacy support
                 "daily_time_hour": 8,
                 "timezone": "America/Los_Angeles",
+                "servers": [],  # New multi-server format
             },
             "channel_leagues": {},
+            "pandaping": {"servers": []},
         }
     except json.JSONDecodeError as e:
         print(f"Error parsing config.json: {e}")
-        return {"world_cup": {"enabled": False}, "channel_leagues": {}}
+        return {
+            "world_cup": {"enabled": False, "servers": []},
+            "channel_leagues": {},
+            "pandaping": {"servers": []},
+        }
 
 
 def load_timezone() -> ZoneInfo:

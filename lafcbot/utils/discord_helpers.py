@@ -57,3 +57,50 @@ async def send_to_channels(bot, message: str, channel_names: list[str]):
             logger.debug(f"Message sent to channel #{channel_name}")
         except Exception as e:
             logger.error(f"Failed to send message to channel {channel_name}: {e}")
+
+
+async def send_to_guild_channels(
+    bot, message: str, guild_channels: list[tuple[str, str]]
+):
+    """
+    Send a message to specific guild+channel combinations.
+
+    Targets specific guilds by ID instead of searching all guilds by channel name.
+    Useful for multi-server deployments where different servers may have different channel names.
+
+    Args:
+        bot: Discord bot instance with guilds attribute
+        message: Message text to send
+        guild_channels: List of (guild_id, channel_name) tuples
+    """
+    sent_channel_ids = set()
+
+    for guild_id, channel_name in guild_channels:
+        if not guild_id or not channel_name:
+            logger.debug("Skipping empty guild_id or channel_name")
+            continue
+
+        guild = bot.get_guild(int(guild_id))
+        if not guild:
+            logger.warning(f"Guild {guild_id} not found (bot not in this server?)")
+            continue
+
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if not channel:
+            logger.warning(
+                f"Channel #{channel_name} not found in guild {guild.name} ({guild_id})"
+            )
+            continue
+
+        if channel.id in sent_channel_ids:
+            logger.debug(f"Channel #{channel_name} already has this message, skipping")
+            continue
+
+        try:
+            await channel.send(message)
+            sent_channel_ids.add(channel.id)
+            logger.debug(f"Message sent to #{channel_name} in {guild.name}")
+        except Exception as e:
+            logger.error(
+                f"Failed to send message to #{channel_name} in guild {guild.name}: {e}"
+            )

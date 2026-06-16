@@ -9,7 +9,7 @@ import discord
 from lafcbot.match_events.detectors import get_card_color
 from lafcbot.match_events.formatters import format_minute
 from lafcbot.utils.countries import get_country_flag
-from lafcbot.utils.discord_helpers import find_channel_by_name, send_to_channels
+from lafcbot.utils.discord_helpers import send_to_channels, send_to_guild_channels
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class MatchNotifier:
     """Handles Discord notifications for match events."""
 
-    def __init__(self, bot, config, timezone, reddit_client=None):
+    def __init__(self, bot, config, timezone, reddit_client=None, server_configs=None):
         """
         Initialize the match notifier.
 
@@ -26,11 +26,13 @@ class MatchNotifier:
             config: Configuration dict with channel names
             timezone: ZoneInfo timezone for time formatting
             reddit_client: Optional Reddit client for fetching goal clips
+            server_configs: Optional list of server configurations for multi-server support
         """
         self.bot = bot
         self.config = config
         self.timezone = timezone
         self.reddit_client = reddit_client
+        self.server_configs = server_configs or []
 
     def _format_team_display(self, team_name: str) -> str:
         """
@@ -75,6 +77,26 @@ class MatchNotifier:
             Tuple of (home_goals, away_goals)
         """
         return match.home_score or 0, match.away_score or 0
+
+    def _get_live_channels(self) -> list[tuple[str, str]] | None:
+        """
+        Get list of (guild_id, channel_name) tuples for live monitoring channels.
+
+        Returns:
+            List of tuples for new format, or None to trigger legacy fallback
+        """
+        channels = []
+        for server_config in self.server_configs:
+            guild_id = server_config.get("guild_id")
+            live_name = server_config.get("live_channel_name")
+
+            if guild_id and live_name:
+                channels.append((guild_id, live_name))
+            elif live_name:
+                # Legacy format: no guild_id, return None to trigger old behavior
+                return None
+
+        return channels if channels else None
 
     def _format_lineup(self, team_lineup: dict, team_name: str) -> str:
         """
@@ -232,30 +254,32 @@ class MatchNotifier:
             if home_lineup and away_lineup:
                 lineup_section = f"\n\n{home_lineup}\n\n{away_lineup}"
 
-        regular_channel_name = self.config.get("channel_name", "world-cup-2026")
-        live_channel_name = self.config.get("live_monitoring", {}).get(
-            "channel_name", "world-cup-live"
-        )
-
-        # Get channel mention or fallback to plain text
-        live_channel = find_channel_by_name(self.bot, live_channel_name)
-        channel_ref = (
-            live_channel.mention if live_channel else "the World Cup live channel"
-        )
-
         message = (
             f"🟢 **MATCH STARTED:** {home_display} vs {away_display}"
             f"{kickoff_info}"
-            f"{lineup_section}\n\n"
-            f"Live updates are available in {channel_ref}."
+            f"{lineup_section}"
         )
 
-        logger.debug(
-            f"Attempting to send start notification to channels: {regular_channel_name}, {live_channel_name}"
-        )
-        await send_to_channels(
-            self.bot, message, [regular_channel_name, live_channel_name]
-        )
+        # Send to guild-specific channels or fall back to legacy
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending match start notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+        else:
+            # Legacy fallback
+            regular_channel_name = self.config.get("channel_name", "world-cup-2026")
+            live_channel_name = self.config.get("live_monitoring", {}).get(
+                "channel_name", "world-cup-live"
+            )
+            logger.debug(
+                f"Using legacy format for match start notification: {regular_channel_name}, {live_channel_name}"
+            )
+            await send_to_channels(
+                self.bot, message, [regular_channel_name, live_channel_name]
+            )
+
         logger.info(
             f"Match start notification sent for {match.home_team.name} vs {match.away_team.name}"
         )
@@ -610,7 +634,15 @@ class MatchNotifier:
 
         message = "\n".join(lines)
 
-        # Send summary
-        await send_to_channels(self.bot, message, [channel_name])
+        # Send to guild-specific channels or fall back to legacy
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending post-match summary to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+        else:
+            # Legacy fallback
+            await send_to_channels(self.bot, message, [channel_name])
 
         logger.info(f"Sent post-match summary for {home_team} vs {away_team}")

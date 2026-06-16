@@ -55,11 +55,25 @@ class SoccerCog(commands.Cog):
             config = load_config()
             channel_leagues = config.get("channel_leagues", {})
             channel_name = ctx.channel.name if hasattr(ctx.channel, "name") else None
+            guild_id = (
+                str(ctx.guild.id) if hasattr(ctx, "guild") and ctx.guild else None
+            )
 
-            if channel_name and channel_name in channel_leagues:
+            # Support both old format (channel_name: league) and new format (guild_id: {channel_name: league})
+            # Try guild-specific lookup first, then fall back to global
+            league = None
+            if guild_id and isinstance(channel_leagues.get(guild_id), dict):
+                # New format: guild-specific channel mappings
+                guild_channels = channel_leagues[guild_id]
+                if channel_name and channel_name in guild_channels:
+                    league = str(guild_channels[channel_name])
+            elif channel_name and channel_name in channel_leagues:
+                # Old format: global channel mappings
                 league = str(channel_leagues[channel_name])
-            else:
-                league = "mls"  # Default fallback
+
+            # Default fallback
+            if not league:
+                league = "mls"
 
         # At this point league is always a string
         assert isinstance(league, str)

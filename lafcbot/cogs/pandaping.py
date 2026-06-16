@@ -21,8 +21,23 @@ class PandaPingCog(commands.Cog):
         self.bot = bot
         self.espn_client = ESPNClient()
         self.timezone = load_timezone()
-        self.channel_name = "other-sports"
-        self.role_name = "Panda Ping"
+
+        # Load per-server configuration
+        from lafcbot.utils.config import load_config
+
+        config = load_config()
+        self.pandaping_config = config.get("pandaping", {})
+        self.server_configs = self.pandaping_config.get("servers", [])
+
+        # Log configuration on startup
+        if self.server_configs:
+            logger.info(
+                f"PandaPing configured for {len(self.server_configs)} server(s)"
+            )
+        else:
+            logger.warning(
+                "PandaPing has no servers configured - announcements will not be sent"
+            )
 
         # Initialize formatter
         from lafcbot.formatters.sports import SportsFormatter
@@ -84,41 +99,69 @@ class PandaPingCog(commands.Cog):
         await self._init_database()
 
     async def _init_database(self):
-        """Initialize the database table for tracking sent panda pings."""
+        """Initialize the database table for tracking sent panda pings with migration support."""
         async with aiosqlite.connect(self.db_path) as db:
+            # Check if old table exists
+            cursor = await db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='panda_pings'"
+            )
+            table_exists = await cursor.fetchone()
+
+            if table_exists:
+                # Check if guild_id column exists
+                cursor = await db.execute("PRAGMA table_info(panda_pings)")
+                columns = await cursor.fetchall()
+                has_guild_id = any(col[1] == "guild_id" for col in columns)
+
+                if not has_guild_id:
+                    # Migration needed: drop old table (safe since it's just tracking sent pings)
+                    logger.info(
+                        "Migrating panda_pings table to include guild_id column"
+                    )
+                    await db.execute("DROP TABLE panda_pings")
+
+            # Create table with new schema (guild-scoped)
             await db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS panda_pings (
-                    game_id TEXT PRIMARY KEY,
+                    game_id TEXT NOT NULL,
+                    guild_id TEXT NOT NULL,
                     away_team TEXT NOT NULL,
                     home_score INTEGER NOT NULL,
                     away_score INTEGER NOT NULL,
-                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (game_id, guild_id)
                 )
                 """
             )
             await db.commit()
 
-    async def _has_ping_been_sent(self, game_id: str) -> bool:
-        """Check if a panda ping has already been sent for this game."""
+    async def _has_ping_been_sent(self, game_id: str, guild_id: str) -> bool:
+        """Check if a panda ping has already been sent for this game in this guild."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT 1 FROM panda_pings WHERE game_id = ?", (game_id,)
+                "SELECT 1 FROM panda_pings WHERE game_id = ? AND guild_id = ?",
+                (game_id, guild_id),
             )
             result = await cursor.fetchone()
             return result is not None
 
     async def _mark_ping_sent(
-        self, game_id: str, away_team: str, home_score: int, away_score: int
+        self,
+        game_id: str,
+        guild_id: str,
+        away_team: str,
+        home_score: int,
+        away_score: int,
     ):
-        """Record that a panda ping has been sent for this game."""
+        """Record that a panda ping has been sent for this game in this guild."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
-                INSERT OR IGNORE INTO panda_pings (game_id, away_team, home_score, away_score)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO panda_pings (game_id, guild_id, away_team, home_score, away_score)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (game_id, away_team, home_score, away_score),
+                (game_id, guild_id, away_team, home_score, away_score),
             )
             await db.commit()
 
@@ -210,22 +253,15 @@ class PandaPingCog(commands.Cog):
                     f"Dodgers game finished: {dodgers_game.away_team} {dodgers_game.away_score} @ LAD {dodgers_game.home_score}"
                 )
 
-                # Check if we already sent a ping for this game
-                game_id = dodgers_game.game_id
-                already_sent = await self._has_ping_been_sent(game_id)
+                # Send panda ping for both wins and losses
+                try:
+                    dodgers_score = int(dodgers_game.home_score)
+                    opponent_score = int(dodgers_game.away_score)
+                    is_win = dodgers_score > opponent_score
 
-                if already_sent:
-                    logger.info(f"Panda ping already sent for game {game_id}, skipping")
-                else:
-                    # Send panda ping for both wins and losses
-                    try:
-                        dodgers_score = int(dodgers_game.home_score)
-                        opponent_score = int(dodgers_game.away_score)
-                        is_win = dodgers_score > opponent_score
-
-                        await self._send_panda_ping(dodgers_game, is_win)
-                    except ValueError as e:
-                        logger.error(f"Error parsing scores: {e}")
+                    await self._send_panda_ping(dodgers_game, is_win)
+                except ValueError as e:
+                    logger.error(f"Error parsing scores: {e}")
 
                 # Stop monitoring and schedule next check
                 self.monitoring_active = False
@@ -250,34 +286,66 @@ class PandaPingCog(commands.Cog):
 
     @tasks.loop(hours=24)
     async def daily_panda_reminder(self):
-        """Send daily Panda deal reminder at 10am."""
-        try:
-            # Find the channel
-            channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=self.channel_name)
-                if channel:
-                    break
+        """Send daily Panda deal reminder to all configured servers."""
+        if not self.server_configs:
+            logger.debug("No servers configured for PandaPing, skipping daily reminder")
+            return
 
-            if not channel:
-                logger.error(
-                    f"Channel #{self.channel_name} not found for daily reminder"
+        for server_config in self.server_configs:
+            try:
+                # Check if daily reminder is enabled for this server
+                if not server_config.get("daily_reminder", True):
+                    logger.debug(
+                        f"Guild {server_config.get('guild_id')} has daily_reminder=false, skipping"
+                    )
+                    continue
+
+                guild_id = server_config.get("guild_id")
+                if not guild_id:
+                    logger.warning(
+                        "Server config missing guild_id for daily reminder, skipping"
+                    )
+                    continue
+
+                channel_name = server_config.get("channel_name", "other-sports")
+                role_name = server_config.get("role_name", "Panda Ping")
+
+                # Find guild
+                guild = self.bot.get_guild(int(guild_id))
+                if not guild:
+                    logger.warning(
+                        f"Guild {guild_id} not found for daily reminder (bot not in this server?)"
+                    )
+                    continue
+
+                # Find channel in that guild
+                channel = discord.utils.get(guild.text_channels, name=channel_name)
+                if not channel:
+                    logger.error(
+                        f"Channel #{channel_name} not found in guild {guild.name} ({guild_id}) for daily reminder"
+                    )
+                    continue
+
+                # Find role in that guild
+                role = discord.utils.get(guild.roles, name=role_name)
+                if not role:
+                    logger.error(
+                        f"Role '{role_name}' not found in guild {guild.name} ({guild_id}) for daily reminder"
+                    )
+                    continue
+
+                # Send spoiler-tagged reminder
+                message = f"{role.mention} ||Daily reminder: Panda Express deal for Dodgers home wins!||"
+                await channel.send(message)
+                logger.info(
+                    f"Sent daily panda reminder to #{channel_name} in {guild.name}"
                 )
-                return
 
-            # Find the role
-            role = discord.utils.get(channel.guild.roles, name=self.role_name)
-            if not role:
-                logger.error(f"Role '{self.role_name}' not found for daily reminder")
-                return
-
-            # Send spoiler-tagged reminder
-            message = f"{role.mention} ||Daily reminder: Panda Express deal for Dodgers home wins!||"
-            await channel.send(message)
-            logger.info(f"Sent daily panda reminder to #{self.channel_name}")
-
-        except Exception as e:
-            logger.error(f"Error in daily panda reminder: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(
+                    f"Error sending daily reminder to guild {server_config.get('guild_id')}: {e}",
+                    exc_info=True,
+                )
 
     @daily_panda_reminder.before_loop
     async def before_daily_reminder(self):
@@ -303,68 +371,119 @@ class PandaPingCog(commands.Cog):
         await asyncio.sleep(wait_seconds)
 
     async def _send_panda_ping(self, game, is_win: bool):
-        """Send the panda ping message to #other-sports.
+        """Send panda ping to all configured servers.
 
         Args:
             game: Game object with score information
             is_win: True if Dodgers won, False if they lost
         """
-        try:
-            # Find the channel
-            channel = None
-            for guild in self.bot.guilds:
-                channel = discord.utils.get(guild.text_channels, name=self.channel_name)
-                if channel:
-                    break
+        if not self.server_configs:
+            logger.debug("No servers configured for PandaPing, skipping announcements")
+            return
 
-            if not channel:
-                logger.error(f"Channel #{self.channel_name} not found")
-                return
+        for server_config in self.server_configs:
+            try:
+                guild_id = server_config.get("guild_id")
+                if not guild_id:
+                    logger.warning("Server config missing guild_id, skipping")
+                    continue
 
-            # Find the role
-            role = discord.utils.get(channel.guild.roles, name=self.role_name)
-            if not role:
+                # Check server preferences for wins/losses
+                if is_win and not server_config.get("announce_wins", True):
+                    logger.debug(
+                        f"Guild {guild_id} has announce_wins=false, skipping win announcement"
+                    )
+                    continue
+                if not is_win and not server_config.get("announce_losses", True):
+                    logger.debug(
+                        f"Guild {guild_id} has announce_losses=false, skipping loss announcement"
+                    )
+                    continue
+
+                # Check if already sent to this guild
+                if await self._has_ping_been_sent(game.game_id, guild_id):
+                    logger.info(
+                        f"Panda ping already sent for game {game.game_id} to guild {guild_id}, skipping"
+                    )
+                    continue
+
+                # Send to this guild
+                await self._send_to_guild(game, is_win, server_config)
+
+            except Exception as e:
                 logger.error(
-                    f"Role '{self.role_name}' not found in {channel.guild.name}"
+                    f"Error sending panda ping to guild {server_config.get('guild_id')}: {e}",
+                    exc_info=True,
                 )
-                return
 
-            # Use formatter to build result text
-            result_text = self.formatter.format_dodgers_game_result(
-                opponent=game.away_team,
-                dodgers_score=int(game.home_score),
-                opponent_score=int(game.away_score),
-                is_win=is_win,
-                is_home=True,
+    async def _send_to_guild(self, game, is_win: bool, server_config: dict):
+        """Send panda ping to a specific guild.
+
+        Args:
+            game: Game object with score information
+            is_win: True if Dodgers won, False if they lost
+            server_config: Server configuration dictionary
+        """
+        guild_id = server_config["guild_id"]
+        channel_name = server_config.get("channel_name", "other-sports")
+        role_name = server_config.get("role_name", "Panda Ping")
+
+        # Find guild
+        guild = self.bot.get_guild(int(guild_id))
+        if not guild:
+            logger.warning(f"Guild {guild_id} not found (bot not in this server?)")
+            return
+
+        # Find channel in that guild
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if not channel:
+            logger.error(
+                f"Channel #{channel_name} not found in guild {guild.name} ({guild_id})"
             )
+            return
 
-            # Add "Final: " prefix to match original format
-            result_text = f"{result_text} - Final"
-
-            if is_win:
-                # Win message with role mention (triggers notification)
-                message = f"{role.mention} ||{result_text}||"
-            else:
-                # Loss message without role mention (no notification)
-                message = f"||{result_text}||"
-
-            # Send the message
-            await channel.send(message)
-            logger.info(
-                f"Sent panda ping to #{self.channel_name}: {game.away_team} {game.away_score} - {game.home_score} LAD "
-                f"({'win' if is_win else 'loss'})"
+        # Find role in that guild
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            logger.error(
+                f"Role '{role_name}' not found in guild {guild.name} ({guild_id})"
             )
+            return
 
-            # Mark as sent in database
-            await self._mark_ping_sent(
-                game.game_id,
-                game.away_team,
-                int(game.home_score),
-                int(game.away_score),
-            )
+        # Use formatter to build result text
+        result_text = self.formatter.format_dodgers_game_result(
+            opponent=game.away_team,
+            dodgers_score=int(game.home_score),
+            opponent_score=int(game.away_score),
+            is_win=is_win,
+            is_home=True,
+        )
 
-        except Exception as e:
-            logger.error(f"Error sending panda ping: {e}", exc_info=True)
+        # Add "Final: " prefix to match original format
+        result_text = f"{result_text} - Final"
+
+        if is_win:
+            # Win message with role mention (triggers notification)
+            message = f"{role.mention} ||{result_text}||"
+        else:
+            # Loss message without role mention (no notification)
+            message = f"||{result_text}||"
+
+        # Send the message
+        await channel.send(message)
+        logger.info(
+            f"Sent panda ping to #{channel_name} in {guild.name}: {game.away_team} {game.away_score} - {game.home_score} LAD "
+            f"({'win' if is_win else 'loss'})"
+        )
+
+        # Mark as sent in database for this guild
+        await self._mark_ping_sent(
+            game.game_id,
+            guild_id,
+            game.away_team,
+            int(game.home_score),
+            int(game.away_score),
+        )
 
     @commands.group(invoke_without_command=True)
     async def panda(self, ctx: commands.Context):

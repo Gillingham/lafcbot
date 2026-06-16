@@ -9,18 +9,25 @@
     ]
   },
   "channel_leagues": {
-    "angel-city-fc-news": "nwsl",
-    "world-cup-2026": "world_cup",
-    "world-cup-2026-live": "world_cup"
+    "609238113705000981": {
+      "angel-city-fc-news": "nwsl",
+      "world-cup-2026": "world_cup",
+      "world-cup-2026-live": "world_cup"
+    }
   },
   "match_output_path": "test_data",
   "world_cup": {
     "enabled": true,
-    "channel_name": "world-cup-2026",
     "daily_time_hour": 8,
+    "servers": [
+      {
+        "guild_id": "609238113705000981",
+        "channel_name": "world-cup-2026",
+        "live_channel_name": "world-cup-2026-live"
+      }
+    ],
     "live_monitoring": {
       "enabled": true,
-      "channel_name": "world-cup-2026-live",
       "check_interval_seconds": 60,
       "pre_match_minutes": 15,
       "fallback_check_hours": 12,
@@ -38,5 +45,17 @@
       "reddit_enabled": true,
       "cache_path": "~/lafcbot/reddit_cache.json"
     }
+  },
+  "pandaping": {
+    "servers": [
+      {
+        "guild_id": "609238113705000981",
+        "channel_name": "other-sports",
+        "role_name": "Panda Ping",
+        "announce_wins": true,
+        "announce_losses": true,
+        "daily_reminder": true
+      }
+    ]
   }
 }

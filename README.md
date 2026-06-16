@@ -109,15 +109,25 @@ The bot uses `config.json` for settings. Create it in the project root:
       "reddit_enabled": true,
       "cache_path": "~/.lafcbot/reddit_cache.json"
     }
+  },
+  "pandaping": {
+    "servers": [
+      {
+        "guild_id": "YOUR_GUILD_ID",
+        "channel_name": "other-sports",
+        "role_name": "Panda Ping",
+        "announce_wins": true,
+        "announce_losses": true,
+        "daily_reminder": true
+      }
+    ]
   }
 }
 ```
 
 ### Channel-Specific Leagues
 
-Configure which league `!matches` shows by default in each channel:
-
-The `channel_leagues` section maps Discord channel names to league identifiers. When `!matches` is called without arguments in a mapped channel, it shows that league's matches automatically.
+Configure which league `!matches` shows by default in each channel. When `!matches` is called without arguments in a mapped channel, it shows that league's matches automatically.
 
 **Valid league identifiers:**
 - `mls` - Major League Soccer
@@ -126,7 +136,34 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 - `champions_league` - UEFA Champions League
 - `world_cup` - FIFA World Cup
 
-**Example:** In the `#premier-league` channel, typing `!matches` will show Premier League matches. In unmapped channels, it defaults to MLS.
+**Configuration formats:**
+
+**Single-server (legacy format):** Maps channel names directly to leagues
+```json
+"channel_leagues": {
+  "mls": "mls",
+  "premier-league": "premier_league",
+  "ucl": "champions_league"
+}
+```
+
+**Multi-server format:** Maps guild_id to channel-league mappings
+```json
+"channel_leagues": {
+  "123456789012345678": {
+    "mls": "mls",
+    "premier-league": "premier_league"
+  },
+  "987654321098765432": {
+    "soccer": "champions_league",
+    "football": "world_cup"
+  }
+}
+```
+
+Both formats are supported. The bot will check guild-specific mappings first, then fall back to global mappings. In unmapped channels, it defaults to MLS.
+
+**To get your guild ID:** Enable Developer Mode in Discord settings, right-click server name, "Copy Server ID"
 
 ### Global Settings
 
@@ -157,14 +194,53 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 
 ### World Cup Settings
 
+**Configuration Format:**
+
+The World Cup feature supports both legacy single-server and new multi-server configurations.
+
+**Multi-server format (recommended):**
+```json
+"world_cup": {
+  "enabled": true,
+  "daily_time_hour": 8,
+  "servers": [
+    {
+      "guild_id": "123456789012345678",
+      "channel_name": "world-cup-2026",
+      "live_channel_name": "world-cup-2026-live"
+    },
+    {
+      "guild_id": "987654321098765432",
+      "channel_name": "wc-updates",
+      "live_channel_name": "wc-live"
+    }
+  ],
+  "live_monitoring": { ... }
+}
+```
+
+**Legacy single-server format (still supported):**
+```json
+"world_cup": {
+  "enabled": true,
+  "channel_name": "world-cup-2026",
+  "live_monitoring": {
+    "channel_name": "world-cup-2026-live",
+    ...
+  }
+}
+```
+
 **Basic Settings:**
 - `enabled`: Toggle all World Cup features on/off
-- `channel_name`: Discord channel for daily spoiler-free match schedules
 - `daily_time_hour`: Hour (0-23) for daily schedule posts
+- `servers`: Array of server configurations (multi-server format)
+  - `guild_id`: Discord server/guild ID (required) - Enable Developer Mode, right-click server, "Copy Server ID"
+  - `channel_name`: Channel for daily spoiler-free schedules
+  - `live_channel_name`: Channel for live match updates
 
 **Live Monitoring:**
 - `live_monitoring.enabled`: Enable real-time goal notifications and live match monitoring
-- `live_monitoring.channel_name`: Discord channel for live updates (can have spoilers)
 - `live_monitoring.check_interval_seconds`: How often to check for updates during matches (default: 60)
 - `live_monitoring.pre_match_minutes`: Start monitoring N minutes before kickoff (default: 15)
 - `live_monitoring.fallback_check_hours`: How long to sleep if no matches found (default: 12)
@@ -183,6 +259,45 @@ The `channel_leagues` section maps Discord channel names to league identifiers. 
 - `highlights.cache_path`: Where to cache found clips
 
 If `config.json` is missing, the bot will run with World Cup updates disabled.
+
+### PandaPing Settings
+
+Configure Dodgers game announcements per server:
+
+**Configuration options:**
+- `servers`: Array of server configurations (required)
+  - `guild_id`: Discord server/guild ID (required) - Enable Developer Mode in Discord, right-click server name, "Copy Server ID"
+  - `channel_name`: Channel name for announcements (default: "other-sports")
+  - `role_name`: Role to mention (default: "Panda Ping")
+  - `announce_wins`: Send notifications for wins (default: true)
+  - `announce_losses`: Send notifications for losses (default: true)
+  - `daily_reminder`: Send daily reminders at 10 AM (default: true)
+
+**Example configuration:**
+```json
+"pandaping": {
+  "servers": [
+    {
+      "guild_id": "123456789012345678",
+      "channel_name": "other-sports",
+      "role_name": "Panda Ping",
+      "announce_wins": true,
+      "announce_losses": true,
+      "daily_reminder": true
+    },
+    {
+      "guild_id": "987654321098765432",
+      "channel_name": "dodgers",
+      "role_name": "Baseball Fans",
+      "announce_wins": true,
+      "announce_losses": false,
+      "daily_reminder": false
+    }
+  ]
+}
+```
+
+**Multi-server support:** You can configure PandaPing for multiple Discord servers by adding multiple entries to the `servers` array. Each server can have different channel names, role names, and notification preferences.
 
 ## Commands
 
