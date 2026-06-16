@@ -499,16 +499,16 @@ class SoccerCog(commands.Cog):
 
                     line = f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
 
-                    # If line length > 33, truncate the team name to fit
+                    # If line length > 33, reduce the team name field width
                     if len(line) > 33:
-                        # Calculate how much to reduce team name
+                        # Calculate how much to reduce team name field
                         overflow = len(line) - 33
-                        truncated_name = (
-                            name[: len(name) - overflow - 1] + "…"
-                            if len(name) > overflow
-                            else name
-                        )
-                        line = f"{pos:<3}{truncated_name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
+                        adjusted_team_width = TEAM_WIDTH - overflow
+
+                        # Truncate name if it's longer than adjusted width
+                        adjusted_name = fmt_team_name(name, adjusted_team_width)
+
+                        line = f"{pos:<3}{adjusted_name:<{adjusted_team_width}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
 
                     lines.append(line)
 
