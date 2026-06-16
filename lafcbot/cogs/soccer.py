@@ -463,22 +463,45 @@ class SoccerCog(commands.Cog):
                     f"{'#':<3}{'Team':<{TEAM_WIDTH}} {'P':>{w_p}} {'W':>{w_w}} {'D':>{w_d}} {'L':>{w_l}} {'GD':>{w_gd}} {'Pts':>{w_pts}}"
                 )
 
-                # Dynamic separator based on column widths
-                sep = (
-                    "-" * 3
-                    + "-" * TEAM_WIDTH
-                    + "+"
-                    + "-" * (w_p + 1)
-                    + "+"
-                    + "-" * (w_w + 1)
-                    + "+"
-                    + "-" * (w_d + 1)
-                    + "+"
-                    + "-" * (w_l + 1)
-                    + "+"
-                    + "-" * (w_gd + 1)
-                    + "+"
-                    + "-" * w_pts
+                # Separator: + at exact positions where spaces separate columns
+                # Column boundaries: after Team, then before each stat column
+                boundary_positions = [
+                    3 + TEAM_WIDTH,  # After Team
+                    3 + TEAM_WIDTH + 1 + w_p,  # Before W
+                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w,  # Before D
+                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d,  # Before L
+                    3 + TEAM_WIDTH + 1 + w_p + 1 + w_w + 1 + w_d + 1 + w_l,  # Before GD
+                    3
+                    + TEAM_WIDTH
+                    + 1
+                    + w_p
+                    + 1
+                    + w_w
+                    + 1
+                    + w_d
+                    + 1
+                    + w_l
+                    + 1
+                    + w_gd,  # Before Pts
+                ]
+                sep_length = (
+                    3
+                    + TEAM_WIDTH
+                    + 1
+                    + w_p
+                    + 1
+                    + w_w
+                    + 1
+                    + w_d
+                    + 1
+                    + w_l
+                    + 1
+                    + w_gd
+                    + 1
+                    + w_pts
+                )
+                sep = "".join(
+                    "+" if i in boundary_positions else "-" for i in range(sep_length)
                 )
                 lines.append(sep)
 
@@ -497,18 +520,20 @@ class SoccerCog(commands.Cog):
                     gd = team.get("goalConDiff", 0)
                     pts = team.get("pts", 0)
 
+                    # Build line with standard column widths
                     line = f"{pos:<3}{name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
 
-                    # If line length > 33, reduce the team name field width
+                    # If line length > 33, truncate the team name string (not the column width)
                     if len(line) > 33:
-                        # Calculate how much to reduce team name field
                         overflow = len(line) - 33
-                        adjusted_team_width = TEAM_WIDTH - overflow
-
-                        # Truncate name if it's longer than adjusted width
-                        adjusted_name = fmt_team_name(name, adjusted_team_width)
-
-                        line = f"{pos:<3}{adjusted_name:<{adjusted_team_width}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
+                        # Truncate the name string itself, keeping column widths constant
+                        max_name_len = len(name) - overflow
+                        if max_name_len > 0:
+                            truncated_name = name[: max_name_len - 1] + "…"
+                        else:
+                            truncated_name = "…"
+                        # Rebuild with same column widths but truncated name
+                        line = f"{pos:<3}{truncated_name:<{TEAM_WIDTH}} {played:>{w_p}} {wins:>{w_w}} {draws:>{w_d}} {losses:>{w_l}} {gd:>{w_gd}} {pts:>{w_pts}}"
 
                     lines.append(line)
 
