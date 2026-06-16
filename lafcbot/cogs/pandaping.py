@@ -1,8 +1,9 @@
 """PandaPing cog for announcing Dodgers home wins."""
 
+import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,9 @@ class PandaPingCog(commands.Cog):
         # Start the main scheduler
         self.scheduler.start()
 
+        # Start the daily reminder task
+        self.daily_panda_reminder.start()
+
     def _load_timezone(self) -> ZoneInfo:
         """Load timezone from config.json."""
         config_path = Path(__file__).parent.parent.parent / "config.json"
@@ -53,6 +57,8 @@ class PandaPingCog(commands.Cog):
         self.scheduler.cancel()
         if self.game_monitor.is_running():
             self.game_monitor.cancel()
+        if self.daily_panda_reminder.is_running():
+            self.daily_panda_reminder.cancel()
 
     @tasks.loop(minutes=1)
     async def scheduler(self):
@@ -250,6 +256,60 @@ class PandaPingCog(commands.Cog):
 
         except Exception as e:
             logger.error(f"Error monitoring game: {e}", exc_info=True)
+
+    @tasks.loop(hours=24)
+    async def daily_panda_reminder(self):
+        """Send daily Panda deal reminder at 10am."""
+        try:
+            # Find the channel
+            channel = None
+            for guild in self.bot.guilds:
+                channel = discord.utils.get(guild.text_channels, name=self.channel_name)
+                if channel:
+                    break
+
+            if not channel:
+                logger.error(
+                    f"Channel #{self.channel_name} not found for daily reminder"
+                )
+                return
+
+            # Find the role
+            role = discord.utils.get(channel.guild.roles, name=self.role_name)
+            if not role:
+                logger.error(f"Role '{self.role_name}' not found for daily reminder")
+                return
+
+            # Send spoiler-tagged reminder
+            message = f"{role.mention} ||Daily reminder: Panda Express deal for Dodgers home wins!||"
+            await channel.send(message)
+            logger.info(f"Sent daily panda reminder to #{self.channel_name}")
+
+        except Exception as e:
+            logger.error(f"Error in daily panda reminder: {e}", exc_info=True)
+
+    @daily_panda_reminder.before_loop
+    async def before_daily_reminder(self):
+        """Wait until bot is ready and schedule for 10am."""
+        await self.bot.wait_until_ready()
+
+        # Calculate time until 10am today or tomorrow
+        now = datetime.now(self.timezone)
+        target = datetime.combine(
+            now.date(), time(hour=10, minute=0), tzinfo=self.timezone
+        )
+
+        # If we've passed 10am today, schedule for tomorrow
+        if now >= target:
+            target = target + timedelta(days=1)
+
+        # Calculate seconds to wait
+        wait_seconds = (target - now).total_seconds()
+
+        logger.info(
+            f"Daily panda reminder will start at {target.strftime('%Y-%m-%d %I:%M %p %Z')}"
+        )
+        await asyncio.sleep(wait_seconds)
 
     async def _send_panda_ping(self, game, is_win: bool):
         """Send the panda ping message to #other-sports.
