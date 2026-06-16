@@ -242,6 +242,9 @@ class WorldCupTask:
                     if us_broadcast_channels:
                         lines.append(f"  📺 {', '.join(us_broadcast_channels)}")
 
+                    # Add blank line between matches
+                    lines.append("")
+
                 # Show remaining upcoming matches without venue info (6-10)
                 if len(upcoming) > 5:
                     for match in upcoming[5:10]:
