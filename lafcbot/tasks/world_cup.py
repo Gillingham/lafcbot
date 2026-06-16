@@ -583,7 +583,10 @@ class WorldCupTask:
                         if e.type.lower() == "half"
                         else e.half_type,
                         "team_id": e.team_id,  # For substitution distinction
-                        "player_name": e.player_name,  # For substitution distinction
+                        "player_name": e.player_name,  # For substitution distinction (player out)
+                        "assist_name": getattr(
+                            e, "assist_name", None
+                        ),  # For substitution distinction (player in)
                     }
                     for e in details.events
                 ]
@@ -654,7 +657,10 @@ class WorldCupTask:
                     if e.type.lower() == "half"
                     else e.half_type,
                     "team_id": e.team_id,  # For substitution distinction
-                    "player_name": e.player_name,  # For substitution distinction
+                    "player_name": e.player_name,  # For substitution distinction (player out)
+                    "assist_name": getattr(
+                        e, "assist_name", None
+                    ),  # For substitution distinction (player in)
                 }
                 for e in details.events
             ]
@@ -739,10 +745,16 @@ class WorldCupTask:
         if not notifications_config.get("substitutions", True):
             return
 
-        # Substitutions have null eventId (parsed as id=0), so use composite key
-        # to distinguish multiple subs: (minute, added_time, team_id, player_out)
+        # Substitutions have null eventId (parsed as id=0), and FotMob's API sometimes
+        # returns fluctuating minute values for the same substitution across polls.
+        # Use (team_id, player_out, player_in) as the composite key to prevent duplicates,
+        # ignoring the minute value which can vary slightly.
         old_subs = {
-            (e["minute"], e.get("added_time"), e.get("team_id"), e.get("player_name"))
+            (
+                e.get("team_id"),
+                e.get("player_name"),  # player out
+                e.get("assist_name"),  # player in (stored in assist_name field)
+            )
             for e in state["last_events"]
             if e["type"].lower() == "substitution"
         }
@@ -751,7 +763,12 @@ class WorldCupTask:
             e
             for e in details.events
             if is_substitution_event(e)
-            and (e.minute, e.added_time, e.team_id, e.player_name) not in old_subs
+            and (
+                e.team_id,
+                e.player_name,
+                getattr(e, "assist_name", None),
+            )
+            not in old_subs
         ]
 
         logger.debug(
