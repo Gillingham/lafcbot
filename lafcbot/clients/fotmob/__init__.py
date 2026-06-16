@@ -14,6 +14,7 @@ from .models import (
     MatchDetails,
     MatchEvent,
     PenaltyShootout,
+    PlayerStat,
     Team,
     Venue,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "BroadcastChannel",
     "Highlight",
     "PenaltyShootout",
+    "PlayerStat",
     "resolve_league_name",
     "format_league_name",
 ]

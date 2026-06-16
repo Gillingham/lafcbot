@@ -112,3 +112,13 @@ class League:
     name: str
     matches: list[Match]
     standings: dict | None = None
+
+
+@dataclass
+class PlayerStat:
+    """Represents a player statistic (goals, assists, etc.)."""
+
+    player_name: str
+    team_name: str | None
+    stat_value: int  # Number of goals/assists
+    rank: int | None = None  # Player's rank in the list

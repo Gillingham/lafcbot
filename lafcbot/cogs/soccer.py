@@ -563,6 +563,115 @@ class SoccerCog(commands.Cog):
             await ctx.send(f"Error fetching match details: {e}")
             print(traceback.format_exc())
 
+    @commands.command()
+    async def stats(
+        self,
+        ctx: commands.Context,
+        stat_type: str = "goals",
+        *,
+        league: str | None = None,
+    ):
+        """
+        Show top player statistics for a league.
+
+        Usage: !stats [stat_type] [league]
+        If no league is specified, uses the league configured for this channel.
+        Stat types: goals, assists (or goal, assist)
+
+        Examples:
+          !stats                    # Top 5 goals for channel-configured league
+          !stats goals wc           # World Cup top scorers
+          !stats assists mls        # MLS top assists
+          !stats assist world cup   # World Cup top assists
+        """
+        if self.fotmob_client is None:
+            await ctx.send(
+                "FotMob client not initialized. Please wait for bot to fully start."
+            )
+            return
+
+        # Normalize stat_type (accept singular and plural forms)
+        stat_type_lower = stat_type.lower().strip()
+        if stat_type_lower.endswith("s"):
+            stat_type_lower = stat_type_lower[:-1]  # Remove trailing 's'
+
+        # Validate stat type
+        if stat_type_lower not in ["goal", "assist"]:
+            await ctx.send(
+                f"Invalid stat type '{stat_type}'. Use: goals, assists (or goal, assist)"
+            )
+            return
+
+        # Map to FotMob stat type
+        fotmob_stat_type = (
+            stat_type_lower + "s"
+        )  # "goal" -> "goals", "assist" -> "assists"
+
+        # Determine league to use
+        if league is None:
+            # No explicit league provided - check channel configuration
+            config = load_config()
+            channel_leagues = config.get("channel_leagues", {})
+            channel_name = ctx.channel.name if hasattr(ctx.channel, "name") else None
+
+            if channel_name and channel_name in channel_leagues:
+                league = str(channel_leagues[channel_name])
+            else:
+                league = "mls"  # Default fallback
+
+        # Resolve league name/alias to canonical name and ID
+        league_key, league_id = resolve_league_name(league)
+
+        if not league_id or not league_key:
+            available_leagues = ", ".join(
+                [format_league_name(k) for k in LEAGUE_IDS.keys()]
+            )
+            await ctx.send(f"Unknown league '{league}'. Available: {available_leagues}")
+            return
+
+        league_display = format_league_name(league_key)
+
+        try:
+            # Fetch player stats
+            player_stats = await self.fotmob_client.get_league_stats(
+                league_id, fotmob_stat_type
+            )
+
+            if not player_stats:
+                await ctx.send(f"No statistics available yet for {league_display}")
+                return
+
+            # Format response
+            stat_display = (
+                fotmob_stat_type.title()
+            )  # "goals" -> "Goals", "assists" -> "Assists"
+            emoji = "⚽" if fotmob_stat_type == "goals" else "🅰️"
+
+            lines = [
+                f"{emoji} **Top {len(player_stats)} {stat_display} - {league_display}**\n"
+            ]
+
+            for i, stat in enumerate(player_stats, 1):
+                team_text = f" ({stat.team_name})" if stat.team_name else ""
+                stat_text = (
+                    "goal"
+                    if stat.stat_value == 1 and fotmob_stat_type == "goals"
+                    else fotmob_stat_type
+                )
+                lines.append(
+                    f"{i}. {stat.player_name}{team_text} - {stat.stat_value} {stat_text}"
+                )
+
+            message = "\n".join(lines)
+            await ctx.send(message)
+
+        except Exception as e:
+            import traceback
+
+            await ctx.send("Failed to fetch statistics. Please try again.")
+            print(f"Error fetching stats: {e}")
+            print(traceback.format_exc())
+
 
 def setup(bot):
     """Setup function to add the cog."""

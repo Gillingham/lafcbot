@@ -28,6 +28,7 @@ from .models import (
     MatchDetails,
     MatchEvent,
     PenaltyShootout,
+    PlayerStat,
     Team,
     Venue,
 )
@@ -1120,3 +1121,112 @@ class FotMobClient:
                 logger.error(f"Failed to parse match from league page: {e}")
 
         return matches
+
+    async def get_league_stats(
+        self, league_id: int, stat_type: str = "goals"
+    ) -> list[PlayerStat]:
+        """
+        Get top player statistics for a league.
+
+        Args:
+            league_id: The league ID (e.g., 77 for World Cup, 130 for MLS)
+            stat_type: "goals" or "assists"
+
+        Returns:
+            List of PlayerStat objects sorted by stat_value descending (top 5)
+        """
+        # Map stat type to FotMob API file names
+        stat_file_map = {"goals": "goals.json", "assists": "goal_assist.json"}
+
+        stat_file = stat_file_map.get(stat_type)
+        if not stat_file:
+            logger.error(f"Invalid stat type: {stat_type}")
+            return []
+
+        # Fetch league stats page to get season ID
+        html = await self._fetch_page_html(f"/leagues/{league_id}/overview")
+        if not html:
+            logger.warning(f"Failed to fetch league page for league {league_id}")
+            return []
+
+        page_props = extract_page_props(html)
+        if not page_props:
+            logger.warning(f"Failed to extract page props for league {league_id}")
+            return []
+
+        # Navigate to stats.players array
+        stats_data = page_props.get("stats", {})
+        players_data = stats_data.get("players", [])
+
+        if not players_data:
+            logger.info(f"No stats available for league {league_id}")
+            return []
+
+        # Find the stat object matching our stat type
+        stat_header_map = {"goals": "Top scorer", "assists": "Assists"}
+        target_header = stat_header_map.get(stat_type)
+
+        stat_obj = None
+        for player_stat in players_data:
+            if player_stat.get("header") == target_header:
+                stat_obj = player_stat
+                break
+
+        if not stat_obj:
+            logger.warning(
+                f"Stat type '{stat_type}' not found in league {league_id} stats"
+            )
+            return []
+
+        # Try to get full stats from data API
+        fetch_all_url = stat_obj.get("fetchAllUrl")
+        if fetch_all_url:
+            try:
+                # Fetch from data API with gzip support
+                headers = {"Accept-Encoding": "gzip, deflate"}
+                response_body = await self._request_with_retry(
+                    fetch_all_url, headers=headers
+                )
+
+                if response_body:
+                    import json
+
+                    data = json.loads(response_body.decode("utf-8"))
+                    top_lists = data.get("TopLists", [])
+
+                    if top_lists and len(top_lists) > 0:
+                        stat_list = top_lists[0].get("StatList", [])
+
+                        # Convert to PlayerStat objects (take top 5)
+                        results = []
+                        for i, item in enumerate(stat_list[:5]):
+                            results.append(
+                                PlayerStat(
+                                    player_name=item.get("ParticipantName", "Unknown"),
+                                    team_name=item.get("TeamName"),
+                                    stat_value=int(item.get("StatValue", 0)),
+                                    rank=item.get("Rank", i + 1),
+                                )
+                            )
+
+                        return results
+            except Exception as e:
+                logger.error(f"Failed to fetch from data API: {e}")
+                # Fall through to topThree fallback
+
+        # Fallback to topThree from page props
+        top_three = stat_obj.get("topThree", [])
+        if top_three:
+            results = []
+            for i, item in enumerate(top_three):
+                results.append(
+                    PlayerStat(
+                        player_name=item.get("name", "Unknown"),
+                        team_name=item.get("teamName"),
+                        stat_value=int(item.get("value", 0)),
+                        rank=item.get("rank", i + 1),
+                    )
+                )
+            return results
+
+        return []
