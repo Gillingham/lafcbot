@@ -36,20 +36,19 @@ class SportsFormatter(BaseFormatter):
         games: list[dict],
     ) -> str:
         """
-        Format !scores command output for any league.
+        Format !scores command output for any league as a single line.
 
         Args:
             league: League name (NBA, MLB, NHL, NFL, F1)
             games: List of game dictionaries with team and score info
 
         Returns:
-            Formatted scores string
+            Formatted scores string (single line)
         """
         if not games:
             return f"No {league.upper()} games today."
 
-        lines = [f"**{league.upper()} Scores:**"]
-
+        game_strings = []
         for game in games:
             home_team = game.get("home_team", "Unknown")
             away_team = game.get("away_team", "Unknown")
@@ -57,13 +56,33 @@ class SportsFormatter(BaseFormatter):
             away_score = game.get("away_score", 0)
             status = game.get("status", "Unknown")
 
-            game_line = self.format_game_score(
-                home_team, away_team, home_score, away_score, status
-            )
-            lines.append(game_line)
+            # Check if this is a scheduled game (status looks like a date/time)
+            if any(
+                keyword in status
+                for keyword in [
+                    "Mon",
+                    "Tue",
+                    "Wed",
+                    "Thu",
+                    "Fri",
+                    "Sat",
+                    "Sun",
+                    "AM",
+                    "PM",
+                ]
+            ):
+                # Scheduled game: Away @ Home (time)
+                game_str = f"{away_team} @ {home_team} ({status})"
+            else:
+                # In-progress or final game: Away score @ Home score status
+                game_str = (
+                    f"{away_team} {away_score} @ {home_team} {home_score} {status}"
+                )
 
-        response = "\n".join(lines)
-        return self.truncate_for_discord(response)
+            game_strings.append(game_str)
+
+        output = f"{league}: {' | '.join(game_strings)}"
+        return self.truncate_for_discord(output)
 
     def format_dodgers_game_result(
         self,

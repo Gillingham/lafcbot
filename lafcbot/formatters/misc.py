@@ -25,13 +25,9 @@ class MiscFormatter(BaseFormatter):
         Returns:
             Formatted dice roll string
         """
-        rolls_str = " + ".join(str(r) for r in rolls)
-
-        if modifier != 0:
-            mod_str = f" {modifier:+d}" if modifier < 0 else f" + {modifier}"
-            return f"🎲 Rolling {notation}: [{rolls_str}]{mod_str} = **{total}**"
-        else:
-            return f"🎲 Rolling {notation}: [{rolls_str}] = **{total}**"
+        rolls_str = ", ".join(str(r) for r in rolls)
+        mod_str = f"{modifier:+d}" if modifier else ""
+        return f"Rolled {notation}: [{rolls_str}] {mod_str} = **{total}**"
 
     def format_8ball_response(self, response: str) -> str:
         """
