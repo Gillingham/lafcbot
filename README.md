@@ -20,6 +20,7 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 - 🌦️ **Weather** - Current weather conditions with AQI data
 - 🏀 **Sports Scores** - Live scores for NBA, MLB, NHL, NFL, F1
 - 🔗 **LatePass** - URL repost tracking with scoring system
+- 🐼 **PandaPing** - Automated Dodgers home game win/loss announcements
 - 🎲 **Dice rolling** - Standard RPG dice notation
 - 🎱 **Magic 8-ball** - Answer your burning questions
 
@@ -253,6 +254,29 @@ Shows detailed match summary with goals, assists, and highlights.
 - 🏟️ Venue information
 - Penalty shootout results (if applicable)
 
+### `!stats [stat_type] [league]`
+Shows top player statistics for a league.
+
+**If no league is specified**, the command uses the league configured for the current Discord channel. If no stat type is specified, defaults to goals.
+
+**Examples:**
+```
+!stats                    # Top goals for channel-configured league
+!stats goals              # Same as above
+!stats assists            # Top assists for channel-configured league
+!stats goals wc           # World Cup top scorers
+!stats assists mls        # MLS top assists
+!stats assist world cup   # World Cup top assists (singular also works)
+```
+
+**Stat types:** `goals`, `assists` (or `goal`, `assist`)
+
+**Output includes:**
+- Player name
+- Team name
+- Statistic count
+- Top performers (typically top 5)
+
 ### Weather Commands
 
 #### `!weather [location]`
@@ -340,6 +364,35 @@ When someone reposts a URL, the bot automatically:
 - Replies with original poster, time ago, scores, ranks, and total reposts
 - Updates both users' scores
 
+### PandaPing Commands
+
+PandaPing automatically monitors Dodgers home games and announces results to the #other-sports channel with role mentions.
+
+#### `!panda`
+Check if PandaPing is enabled and active.
+
+#### `!panda status`
+Shows current monitoring status, active game info, and next scheduled game.
+
+**Example output:**
+```
+🐼 PandaPing Status:
+Monitoring: Active 🟢
+Current Game: Dodgers vs Giants - Top 5th, LAD 3-2
+Next Game: Tomorrow at 7:10 PM PT vs Padres (Home)
+```
+
+#### `!panda check`
+Manually trigger a check for Dodgers game updates (useful for testing or forcing an update).
+
+**Automatic Features:**
+- **Game Result Announcements:** When a Dodgers home game ends, automatically posts to #other-sports
+  - Wins: Mentions @Panda Ping role with final score
+  - Losses: Posts without role mention (still visible but no notification)
+  - All results use spoiler tags to hide scores
+- **Daily Reminders:** Every day around 10 AM PT (with randomization), posts upcoming home games for the day
+- **Smart Monitoring:** Only actively checks during game times to minimize API usage
+
 ### Other Commands
 
 - `!ping` - Check bot latency
@@ -426,8 +479,10 @@ lafcbot/
 │   ├── db.py                  # Database operations (SQLite)
 │   ├── cogs/                  # Discord command cogs
 │   │   ├── __init__.py
-│   │   ├── soccer.py          # Soccer commands (matches, standings, match)
-│   │   └── misc.py            # Utility commands (weather, latepass, dice, 8ball)
+│   │   ├── soccer.py          # Soccer commands (matches, standings, match, stats)
+│   │   ├── latepass.py        # LatePass URL tracking system
+│   │   ├── pandaping.py       # PandaPing Dodgers announcements
+│   │   └── misc.py            # Utility commands (weather, scores, dice, 8ball, wut)
 │   ├── tasks/                 # Background tasks
 │   │   ├── __init__.py
 │   │   └── world_cup.py       # World Cup daily schedule + live monitoring
