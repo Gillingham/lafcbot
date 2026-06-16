@@ -448,8 +448,20 @@ class SoccerCog(commands.Cog):
 
                 # Dynamic separator based on column widths
                 sep = (
-                    "-" * (2 + TEAM_WIDTH)
-                    + f"-+-{'-' * w_p}-+-{'-' * w_w}-+-{'-' * w_d}-+-{'-' * w_l}-+-{'-' * w_gd}-+-{'-' * w_pts}-"
+                    "-" * 3
+                    + "-" * TEAM_WIDTH
+                    + "+"
+                    + "-" * w_p
+                    + "+"
+                    + "-" * w_w
+                    + "+"
+                    + "-" * w_d
+                    + "+"
+                    + "-" * w_l
+                    + "+"
+                    + "-" * w_gd
+                    + "+"
+                    + "-" * w_pts
                 )
                 lines.append(sep)
 
