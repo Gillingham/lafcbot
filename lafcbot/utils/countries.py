@@ -1,6 +1,143 @@
-"""Country flag utilities for soccer teams."""
+"""Country flag, code, and ranking utilities for soccer teams."""
 
 from functools import cache
+
+from lafcbot.clients.fotmob.models import CountryInfo
+
+
+# UK subdivision flags to prevent bot from using the generic UK flag
+SUBDIVISION_FLAGS: dict[str, str] = {
+    "GB-ENG": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",  # England
+    "GB-SCT": "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",  # Scotland
+    "GB-WLS": "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f",  # Wales
+}
+
+
+# World Cup / international country info.
+# This must be defined before COUNTRY_INFO_BY_NAME.
+COUNTRIES: list[CountryInfo] = [
+    # UEFA
+    CountryInfo("Germany", "DE", "DEU", "GER", 9),
+    CountryInfo("Spain", "ES", "ESP", "ESP", 2),
+    CountryInfo("France", "FR", "FRA", "FRA", 3),
+    CountryInfo("Italy", "IT", "ITA", "ITA", 12),
+    CountryInfo("England", "GB-ENG", "GBR", "ENG", 4),
+    CountryInfo("Portugal", "PT", "PRT", "POR", 5),
+    CountryInfo("Netherlands", "NL", "NLD", "NED", 8),
+    CountryInfo("Belgium", "BE", "BEL", "BEL", 10),
+    CountryInfo("Croatia", "HR", "HRV", "CRO", 11),
+    CountryInfo("Denmark", "DK", "DNK", "DEN", 21),
+    CountryInfo("Switzerland", "CH", "CHE", "SUI", 19),
+    CountryInfo("Austria", "AT", "AUT", "AUT", 24),
+    CountryInfo("Poland", "PL", "POL", "POL", 37),
+    CountryInfo("Ukraine", "UA", "UKR", "UKR", 33),
+    CountryInfo("Sweden", "SE", "SWE", "SWE", 35),
+    CountryInfo("Norway", "NO", "NOR", "NOR", 31),
+    CountryInfo("Czech Republic", "CZ", "CZE", "CZE", 43),
+    CountryInfo("Czechia", "CZ", "CZE", "CZE", 43),
+    CountryInfo("Serbia", "RS", "SRB", "SRB", 41),
+    CountryInfo("Turkey", "TR", "TUR", "TUR", 26),
+    CountryInfo("Turkiye", "TR", "TUR", "TUR", 26),
+    CountryInfo("Greece", "GR", "GRC", "GRE", 47),
+    CountryInfo("Scotland", "GB-SCT", "GBR", "SCO", 38),
+    CountryInfo("Wales", "GB-WLS", "GBR", "WAL", 39),
+    CountryInfo("Ireland", "IE", "IRL", "IRL", 58),
+    CountryInfo("Northern Ireland", "GB-NIR", "GBR", "NIR", 70),
+    CountryInfo("Bosnia and Herzegovina", "BA", "BIH", "BIH", 63),
+    CountryInfo("Albania", "AL", "ALB", "ALB", 66),
+    CountryInfo("North Macedonia", "MK", "MKD", "MKD", 69),
+    CountryInfo("Slovenia", "SI", "SVN", "SVN", 59),
+    CountryInfo("Slovakia", "SK", "SVK", "SVK", 46),
+    CountryInfo("Romania", "RO", "ROU", "ROU", 54),
+    CountryInfo("Bulgaria", "BG", "BGR", "BUL", 87),
+    CountryInfo("Hungary", "HU", "HUN", "HUN", 40),
+    CountryInfo("Finland", "FI", "FIN", "FIN", 75),
+    CountryInfo("Iceland", "IS", "ISL", "ISL", 74),
+    CountryInfo("Israel", "IL", "ISR", "ISR", 76),
+
+    # CONMEBOL
+    CountryInfo("Brazil", "BR", "BRA", "BRA", 6),
+    CountryInfo("Argentina", "AR", "ARG", "ARG", 1),
+    CountryInfo("Uruguay", "UY", "URY", "URU", 17),
+    CountryInfo("Colombia", "CO", "COL", "COL", 14),
+    CountryInfo("Chile", "CL", "CHL", "CHI", 51),
+    CountryInfo("Peru", "PE", "PER", "PER", 52),
+    CountryInfo("Ecuador", "EC", "ECU", "ECU", 28),
+    CountryInfo("Paraguay", "PY", "PRY", "PAR", 42),
+    CountryInfo("Venezuela", "VE", "VEN", "VEN", 48),
+    CountryInfo("Bolivia", "BO", "BOL", "BOL", 77),
+
+    # CONCACAF
+    CountryInfo("USA", "US", "USA", "USA", 15),
+    CountryInfo("United States", "US", "USA", "USA", 15),
+    CountryInfo("Mexico", "MX", "MEX", "MEX", 13),
+    CountryInfo("Canada", "CA", "CAN", "CAN", 32),
+    CountryInfo("Costa Rica", "CR", "CRI", "CRC", 53),
+    CountryInfo("Jamaica", "JM", "JAM", "JAM", 71),
+    CountryInfo("Panama", "PA", "PAN", "PAN", 34),
+    CountryInfo("Honduras", "HN", "HND", "HON", 65),
+    CountryInfo("Haiti", "HT", "HTI", "HAI", 84),
+    CountryInfo("Curaçao", "CW", "CUW", "CUW", 82),
+    CountryInfo("Curacao", "CW", "CUW", "CUW", 82),
+    CountryInfo("Trinidad and Tobago", "TT", "TTO", "TRI", 102),
+    CountryInfo("El Salvador", "SV", "SLV", "SLV", 100),
+    CountryInfo("Guatemala", "GT", "GTM", "GUA", 97),
+    CountryInfo("Dominican Republic", "DO", "DOM", "DOM", 144),
+    CountryInfo("Suriname", "SR", "SUR", "SUR", 125),
+
+    # AFC
+    CountryInfo("Japan", "JP", "JPN", "JPN", 18),
+    CountryInfo("South Korea", "KR", "KOR", "KOR", 22),
+    CountryInfo("Korea Republic", "KR", "KOR", "KOR", 22),
+    CountryInfo("Australia", "AU", "AUS", "AUS", 23),
+    CountryInfo("Iran", "IR", "IRN", "IRN", 20),
+    CountryInfo("Saudi Arabia", "SA", "SAU", "KSA", 60),
+    CountryInfo("Qatar", "QA", "QAT", "QAT", 49),
+    CountryInfo("UAE", "AE", "ARE", "UAE", 68),
+    CountryInfo("Iraq", "IQ", "IRQ", "IRQ", 57),
+    CountryInfo("China", "CN", "CHN", "CHN", 91),
+    CountryInfo("Thailand", "TH", "THA", "THA", 94),
+    CountryInfo("Jordan", "JO", "JOR", "JOR", 64),
+    CountryInfo("Uzbekistan", "UZ", "UZB", "UZB", 50),
+
+    # CAF
+    CountryInfo("Nigeria", "NG", "NGA", "NGA", 25),
+    CountryInfo("Senegal", "SN", "SEN", "SEN", 16),
+    CountryInfo("Morocco", "MA", "MAR", "MAR", 7),
+    CountryInfo("Egypt", "EG", "EGY", "EGY", 30),
+    CountryInfo("Ghana", "GH", "GHA", "GHA", 73),
+    CountryInfo("Cameroon", "CM", "CMR", "CMR", 44),
+    CountryInfo("Algeria", "DZ", "DZA", "ALG", 27),
+    CountryInfo("Tunisia", "TN", "TUN", "TUN", 56),
+    CountryInfo("South Africa", "ZA", "ZAF", "RSA", 61),
+    CountryInfo("Ivory Coast", "CI", "CIV", "CIV", 29),
+    CountryInfo("Côte d'Ivoire", "CI", "CIV", "CIV", 29),
+    CountryInfo("Cape Verde", "CV", "CPV", "CPV", 67),
+    CountryInfo("DR Congo", "CD", "COD", "COD", 45),
+
+    # OFC
+    CountryInfo("New Zealand", "NZ", "NZL", "NZL", 85),
+]
+
+
+COUNTRY_INFO_BY_NAME: dict[str, CountryInfo] = {
+    country.country_name.casefold(): country
+    for country in COUNTRIES
+}
+
+
+@cache
+def get_country_info(country_name: str) -> CountryInfo | None:
+    """
+    Get CountryInfo by country name.
+
+    Args:
+        country_name: Name or alias of the country.
+
+    Returns:
+        CountryInfo object, or None if country not found.
+    """
+    return COUNTRY_INFO_BY_NAME.get(country_name.strip().casefold())
 
 
 @cache
@@ -8,235 +145,36 @@ def get_country_flag(country_name: str) -> str:
     """
     Convert a country name to its flag emoji.
 
-    Supports all 48 World Cup 2026 teams plus additional countries.
-    Handles UK subdivisions (England, Scotland, Wales) with proper flag emojis.
-    Supports alternative spellings (e.g., Czechia/Czech Republic, Turkiye/Turkey).
+    Uses CountryInfo.iso_alpha_2 as the source of truth.
+    Handles UK subdivisions like England, Scotland, and Wales.
 
     Args:
-        country_name: Name of the country
+        country_name: Name or alias of the country.
 
     Returns:
-        Flag emoji string, or empty string if country not found
+        Flag emoji string, or empty string if country not found.
     """
-    # Map common country names to their ISO 3166-1 alpha-2 codes
-    country_codes = {
-        # UEFA
-        "Germany": "DE",
-        "Spain": "ES",
-        "France": "FR",
-        "Italy": "IT",
-        "England": "GB-ENG",
-        "Portugal": "PT",
-        "Netherlands": "NL",
-        "Belgium": "BE",
-        "Croatia": "HR",
-        "Denmark": "DK",
-        "Switzerland": "CH",
-        "Austria": "AT",
-        "Poland": "PL",
-        "Ukraine": "UA",
-        "Sweden": "SE",
-        "Norway": "NO",
-        "Czech Republic": "CZ",
-        "Czechia": "CZ",
-        "Serbia": "RS",
-        "Turkey": "TR",
-        "Turkiye": "TR",
-        "Greece": "GR",
-        "Scotland": "GB-SCT",
-        "Wales": "GB-WLS",
-        "Ireland": "IE",
-        "Northern Ireland": "GB-NIR",
-        "Bosnia and Herzegovina": "BA",
-        "Albania": "AL",
-        "North Macedonia": "MK",
-        "Slovenia": "SI",
-        "Slovakia": "SK",
-        "Romania": "RO",
-        "Bulgaria": "BG",
-        "Hungary": "HU",
-        "Finland": "FI",
-        "Iceland": "IS",
-        "Israel": "IL",
-        # CONMEBOL
-        "Brazil": "BR",
-        "Argentina": "AR",
-        "Uruguay": "UY",
-        "Colombia": "CO",
-        "Chile": "CL",
-        "Peru": "PE",
-        "Ecuador": "EC",
-        "Paraguay": "PY",
-        "Venezuela": "VE",
-        "Bolivia": "BO",
-        # CONCACAF
-        "USA": "US",
-        "United States": "US",
-        "Mexico": "MX",
-        "Canada": "CA",
-        "Costa Rica": "CR",
-        "Jamaica": "JM",
-        "Panama": "PA",
-        "Honduras": "HN",
-        "Haiti": "HT",
-        "Curaçao": "CW",
-        "Curacao": "CW",
-        "Trinidad and Tobago": "TT",
-        "El Salvador": "SV",
-        "Guatemala": "GT",
-        "Dominican Republic": "DO",
-        "Suriname": "SR",
-        # AFC
-        "Japan": "JP",
-        "South Korea": "KR",
-        "Korea Republic": "KR",
-        "Australia": "AU",
-        "Iran": "IR",
-        "Saudi Arabia": "SA",
-        "Qatar": "QA",
-        "UAE": "AE",
-        "Iraq": "IQ",
-        "China": "CN",
-        "Thailand": "TH",
-        "Jordan": "JO",
-        "Uzbekistan": "UZ",
-        # CAF
-        "Nigeria": "NG",
-        "Senegal": "SN",
-        "Morocco": "MA",
-        "Egypt": "EG",
-        "Ghana": "GH",
-        "Cameroon": "CM",
-        "Algeria": "DZ",
-        "Tunisia": "TN",
-        "South Africa": "ZA",
-        "Ivory Coast": "CI",
-        "Côte d'Ivoire": "CI",
-        "Cape Verde": "CV",
-        "DR Congo": "CD",
-        # OFC
-        "New Zealand": "NZ",
-    }
+    country = get_country_info(country_name)
+    if country is None:
+        return ""
 
-    code = country_codes.get(country_name, "")
+    code = country.iso_alpha_2
     if not code:
         return ""
 
-    # UK Subdivision flags to prevent bot from using UK flags for scotland, english and wales
-    SUBDIVISION_FLAGS = {
-        "GB-ENG": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",  # England
-        "GB-SCT": "\U0001f3f4\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f",  # Scotland
-        "GB-WLS": "\U0001f3f4\U000e0067\U000e0062\U000e0077\U000e006c\U000e0073\U000e007f",  # Wales
-    }
     if code in SUBDIVISION_FLAGS:
         return SUBDIVISION_FLAGS[code]
-    # Northern Ireland has no official Unicode subdivision flag, plus they arent in the WC anyway.
 
-    # Convert ISO code to flag emoji
-    # Each letter becomes a regional indicator symbol (🇦 = U+1F1E6, etc.)
-    flag = "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code.upper())
-    return flag
+    # Northern Ireland has no official Unicode subdivision flag.
+    # Returning empty string avoids accidentally showing the generic UK flag.
+    if code == "GB-NIR":
+        return ""
 
+    # Only standard two-letter ISO alpha-2 codes can be converted this way.
+    if len(code) != 2:
+        return ""
 
-# FIFA World Rankings
-FIFA_RANKINGS = {
-    "Argentina": 1,
-    "Spain": 2,
-    "France": 3,
-    "England": 4,
-    "Portugal": 5,
-    "Brazil": 6,
-    "Morocco": 7,
-    "Netherlands": 8,
-    "Germany": 9,
-    "Belgium": 10,
-    "Croatia": 11,
-    "Italy": 12,
-    "Mexico": 13,
-    "Colombia": 14,
-    "USA": 15,
-    "United States": 15,
-    "Senegal": 16,
-    "Uruguay": 17,
-    "Japan": 18,
-    "Switzerland": 19,
-    "Iran": 20,
-    "IR Iran": 20,
-    "Denmark": 21,
-    "South Korea": 22,
-    "Korea Republic": 22,
-    "Australia": 23,
-    "Austria": 24,
-    "Nigeria": 25,
-    "Turkey": 26,
-    "Turkiye": 26,
-    "Türkiye": 26,
-    "Algeria": 27,
-    "Ecuador": 28,
-    "Ivory Coast": 29,
-    "Côte d'Ivoire": 29,
-    "Egypt": 30,
-    "Norway": 31,
-    "Canada": 32,
-    "Ukraine": 33,
-    "Panama": 34,
-    "Sweden": 35,
-    "Poland": 37,
-    "Scotland": 38,
-    "Wales": 39,
-    "Hungary": 40,
-    "Serbia": 41,
-    "Paraguay": 42,
-    "Czech Republic": 43,
-    "Czechia": 43,
-    "Cameroon": 44,
-    "DR Congo": 45,
-    "Congo DR": 45,
-    "Slovakia": 46,
-    "Greece": 47,
-    "Venezuela": 48,
-    "Qatar": 49,
-    "Uzbekistan": 50,
-    "Chile": 51,
-    "Peru": 52,
-    "Costa Rica": 53,
-    "Romania": 54,
-    "Tunisia": 56,
-    "Iraq": 57,
-    "Ireland": 58,
-    "Slovenia": 59,
-    "Saudi Arabia": 60,
-    "South Africa": 61,
-    "Bosnia and Herzegovina": 63,
-    "Jordan": 64,
-    "Honduras": 65,
-    "Albania": 66,
-    "Cape Verde": 67,
-    "Cabo Verde": 67,
-    "UAE": 68,
-    "United Arab Emirates": 68,
-    "North Macedonia": 69,
-    "Northern Ireland": 70,
-    "Jamaica": 71,
-    "Ghana": 73,
-    "Iceland": 74,
-    "Finland": 75,
-    "Israel": 76,
-    "Bolivia": 77,
-    "Curaçao": 82,
-    "Curacao": 82,
-    "Haiti": 84,
-    "New Zealand": 85,
-    "Bulgaria": 87,
-    "China": 91,
-    "China PR": 91,
-    "Thailand": 94,
-    "Guatemala": 97,
-    "El Salvador": 100,
-    "Trinidad and Tobago": 102,
-    "Suriname": 125,
-    "Dominican Republic": 144,
-}
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code.upper())
 
 
 @cache
@@ -244,7 +182,70 @@ def get_country_rank(country_name: str) -> int | None:
     """
     Get the FIFA men's ranking for a country.
 
+    Uses CountryInfo.fifa_rank as the source of truth.
+
+    Args:
+        country_name: Name or alias of the country.
+
     Returns:
-        FIFA rank as an int, or None if country not found.
+        FIFA rank as an int, or None if country not found or rank unknown.
     """
-    return FIFA_RANKINGS.get(country_name)
+    country = get_country_info(country_name)
+    if country is None:
+        return None
+
+    return country.fifa_rank
+
+
+@cache
+def get_fifa_trigram(country_name: str) -> str:
+    """
+    Get the FIFA-style three-letter country code.
+
+    Args:
+        country_name: Name or alias of the country.
+
+    Returns:
+        FIFA trigram string, or empty string if country not found.
+    """
+    country = get_country_info(country_name)
+    if country is None:
+        return ""
+
+    return country.fifa_trigram
+
+
+@cache
+def get_iso_alpha_2(country_name: str) -> str:
+    """
+    Get the ISO alpha-2 code or subdivision code used for flags.
+
+    Args:
+        country_name: Name or alias of the country.
+
+    Returns:
+        ISO alpha-2 string, subdivision code, or empty string if country not found.
+    """
+    country = get_country_info(country_name)
+    if country is None:
+        return ""
+
+    return country.iso_alpha_2
+
+
+@cache
+def get_iso_alpha_3(country_name: str) -> str:
+    """
+    Get the ISO alpha-3 code.
+
+    Args:
+        country_name: Name or alias of the country.
+
+    Returns:
+        ISO alpha-3 string, or empty string if country not found.
+    """
+    country = get_country_info(country_name)
+    if country is None:
+        return ""
+
+    return country.iso_alpha_3

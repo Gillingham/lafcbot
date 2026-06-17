@@ -10,6 +10,7 @@ from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_lea
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
 from lafcbot.utils.checks import require_fotmob_client
 from lafcbot.utils.errors import handle_api_errors
+from lafcbot.utils.countries import get_fifa_trigram
 
 
 class SoccerCog(commands.Cog):
@@ -349,10 +350,13 @@ class SoccerCog(commands.Cog):
         # Convert to simple format for formatter
         stats_list = []
         for stat in player_stats:
+            team_name = stat.team_name or "Unknown"
+            fifa_trigram = get_fifa_trigram(team_name)
+        
             stats_list.append(
                 {
-                    "player_name": stat.player_name,
-                    "team_name": stat.team_name or "Unknown",
+                    "player_name": truncate_player_name(stat.player_name, max_length=17),
+                    "team_name": fifa_trigram or team_name,
                     fotmob_stat_type: stat.stat_value,
                 }
             )
@@ -363,6 +367,22 @@ class SoccerCog(commands.Cog):
         )
         await ctx.send(message)
 
+
+def truncate_player_name(player_name: str, max_length: int = 17) -> str:
+    """
+    Truncate a player name to fit compact Discord table output.
+
+    Args:
+        player_name: Full player name.
+        max_length: Maximum number of characters to keep.
+
+    Returns:
+        Truncated player name.
+    """
+    if len(player_name) <= max_length:
+        return player_name
+
+    return player_name[: max_length - 1] + "…"
 
 def setup(bot):
     """Setup function to add the cog."""

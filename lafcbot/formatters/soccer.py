@@ -359,13 +359,13 @@ class SoccerFormatter(BaseFormatter):
         # Determine column widths
         max_player_len = max(len(p.get("player_name", "")) for p in stats_data)
         max_team_len = max(len(p.get("team_name", "")) for p in stats_data)
-        player_width = min(max_player_len + 2, 25)
-        team_width = min(max_team_len + 2, 25)
+        player_width = min(max_player_len + 2, 17)
+        team_width = min(max_team_len + 2, 4)
 
         # Header
         header = self.format_table_row(
             ["#", "Player", "Team", stat_label],
-            [3, player_width, team_width, 6],
+            [3, player_width, team_width, 5],
         )
         lines.append(header)
         lines.append("-" * len(header))
@@ -375,11 +375,11 @@ class SoccerFormatter(BaseFormatter):
             rank = str(i)
             name = player.get("player_name", "Unknown")
             team = player.get("team_name", "Unknown")
-            stat_val = str(player.get(stat_type, 0))
+            stat_val = f" {player.get(stat_type, 0)}"  # pad 1 space
 
             row = self.format_table_row(
                 [rank, name, team, stat_val],
-                [3, player_width, team_width, 6],
+                [3, player_width, team_width, 5],
             )
             lines.append(row)
 
