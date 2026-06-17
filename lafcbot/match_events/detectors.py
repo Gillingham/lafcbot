@@ -117,3 +117,21 @@ def is_half_event(event) -> bool:
     except Exception:
         pass
     return False
+
+
+def is_cancelled_goal(event) -> bool:
+    """
+    Check if an event is a cancelled/disallowed goal (e.g., VAR ruled No Goal).
+
+    Args:
+        event: Event object with type and cancelled attributes
+
+    Returns:
+        True if event is a goal that was cancelled, False otherwise
+    """
+    try:
+        if event.type and str(event.type).lower() == "goal":
+            return getattr(event, "cancelled", False)
+    except Exception:
+        pass
+    return False

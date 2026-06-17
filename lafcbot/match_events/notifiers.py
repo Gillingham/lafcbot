@@ -5,7 +5,10 @@ import logging
 from datetime import datetime, timedelta
 
 from lafcbot.match_events.detectors import get_card_color
-from lafcbot.match_events.formatters import format_minute
+from lafcbot.match_events.formatters import (
+    format_cancelled_goal_notification,
+    format_minute,
+)
 from lafcbot.utils.countries import get_country_flag
 from lafcbot.utils.discord_helpers import send_to_guild_channels
 
@@ -327,6 +330,48 @@ class MatchNotifier:
                         away_goals,
                     )
                 )
+
+    async def notify_cancelled_goal(self, channel, details, goal_event):
+        """
+        Send a cancelled/disallowed goal notification to Discord (e.g., VAR ruled No Goal).
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            goal_event: Cancelled goal event object
+        """
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
+
+        scorer = goal_event.player_name or "Unknown"
+        minute_display = format_minute(goal_event)
+
+        score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
+
+        team_display = self._get_event_team_display(
+            goal_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        message = format_cancelled_goal_notification(
+            scorer=scorer,
+            team_display=team_display,
+            minute_display=minute_display,
+            score_line=score_line,
+        )
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending cancelled goal notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
 
     async def _add_reddit_clip(
         self,

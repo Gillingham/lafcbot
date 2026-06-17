@@ -28,6 +28,9 @@ class MatchEvent:
     own_goal: bool = False  # Whether this is an own goal
     card_color: str | None = None  # "yellow" or "red" when applicable
     half_type: str | None = None  # "HT" for half-time, "FT" for full-time
+    cancelled: bool = (
+        False  # Whether this goal was disallowed/ruled No Goal (e.g., via VAR)
+    )
 
 
 @dataclass
