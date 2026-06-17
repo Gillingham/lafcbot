@@ -1200,7 +1200,7 @@ class FotMobClient:
 
                         # Convert to PlayerStat objects (take top 5)
                         results = []
-                        for i, item in enumerate(stat_list[:5]):
+                        for i, item in enumerate(stat_list[:10]):
                             results.append(
                                 PlayerStat(
                                     player_name=item.get("ParticipantName", "Unknown"),
