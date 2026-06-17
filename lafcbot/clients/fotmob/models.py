@@ -12,6 +12,16 @@ class Team:
     name: str
     logo_url: str | None = None
 
+@dataclass
+class CountryInfo:
+    """Represents country identifiers and FIFA ranking data."""
+
+    country_name: str
+    iso_alpha_2: str
+    iso_alpha_3: str
+    fifa_trigram: str
+    fifa_rank: int | None = None
+
 
 @dataclass
 class MatchEvent:
