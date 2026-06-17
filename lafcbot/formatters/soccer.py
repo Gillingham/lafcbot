@@ -356,32 +356,62 @@ class SoccerFormatter(BaseFormatter):
         stat_label = stat_type.capitalize()
         lines = [f"**{league_name} - Top {stat_label}:**", "```"]
 
-        # Determine column widths
-        max_player_len = max(len(p.get("player_name", "")) for p in stats_data)
-        max_team_len = max(len(p.get("team_name", "")) for p in stats_data)
-        player_width = min(max_player_len + 2, 17)
-        team_width = min(max_team_len + 2, 4)
-
-        # Header
-        header = self.format_table_row(
-            ["#", "Player", "Team", stat_label],
-            [3, player_width, team_width, 5],
-        )
-        lines.append(header)
-        lines.append("-" * len(header))
-
-        # Player rows
-        for i, player in enumerate(stats_data, 1):
-            rank = str(i)
-            name = player.get("player_name", "Unknown")
-            team = player.get("team_name", "Unknown")
-            stat_val = f" {player.get(stat_type, 0)}"  # pad 1 space
-
-            row = self.format_table_row(
-                [rank, name, team, stat_val],
+        # Use World Cup formatter for World Cup matches, otherwise use regular formatter
+        if league_name == "world_cup":
+            # Determine column widths
+            max_player_len = max(len(p.get("player_name", "")) for p in stats_data)
+            max_team_len = max(len(p.get("team_name", "")) for p in stats_data)
+            player_width = min(max_player_len + 2, 17)
+            team_width = min(max_team_len + 2, 4)
+    
+            # Header
+            header = self.format_table_row(
+                ["#", "Player", "Team", stat_label],
                 [3, player_width, team_width, 5],
             )
-            lines.append(row)
+            lines.append(header)
+            lines.append("-" * len(header))
+    
+            # Player rows
+            for i, player in enumerate(stats_data, 1):
+                rank = str(i)
+                name = player.get("player_name", "Unknown")
+                team = player.get("team_name", "Unknown")
+                stat_val = f" {player.get(stat_type, 0)}"  # pad 1 space
+    
+                row = self.format_table_row(
+                    [rank, name, team, stat_val],
+                    [3, player_width, team_width, 5],
+                )
+                lines.append(row)
+        else:
+            # Determine column widths
+            max_player_len = max(len(p.get("player_name", "")) for p in stats_data)
+            max_team_len = max(len(p.get("team_name", "")) for p in stats_data)
+            player_width = min(max_player_len + 2, 25)
+            team_width = min(max_team_len + 2, 25)
+    
+            # Header
+            header = self.format_table_row(
+                ["#", "Player", "Team", stat_label],
+                [3, player_width, team_width, 6],
+            )
+            lines.append(header)
+            lines.append("-" * len(header))
+    
+            # Player rows
+            for i, player in enumerate(stats_data, 1):
+                rank = str(i)
+                name = player.get("player_name", "Unknown")
+                team = player.get("team_name", "Unknown")
+                stat_val = str(player.get(stat_type, 0))
+    
+                row = self.format_table_row(
+                    [rank, name, team, stat_val],
+                    [3, player_width, team_width, 6],
+                )
+                lines.append(row)
+
 
         lines.append("```")
         response = "\n".join(lines)
