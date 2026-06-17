@@ -355,7 +355,7 @@ class SoccerCog(commands.Cog):
         
             stats_list.append(
                 {
-                    "player_name": truncate_player_name(stat.player_name, max_length=17),
+                    "player_name": truncate_player_name(stat.player_name, max_length=15),
                     "team_name": fifa_trigram or team_name,
                     fotmob_stat_type: stat.stat_value,
                 }
