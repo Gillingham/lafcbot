@@ -181,7 +181,7 @@ class MatchNotifier:
         away_flag: str,
     ) -> str:
         """
-        Format goal events into a list string.
+        Format goal events into a list string, ordered chronologically from earliest to latest.
 
         Args:
             details: MatchDetails object with events
@@ -198,8 +198,13 @@ class MatchNotifier:
         if not goal_events:
             return ""
 
+        # Sort goals chronologically (earliest first)
+        goal_events_sorted = sorted(
+            goal_events, key=lambda e: (e.minute or 0, e.added_time or 0)
+        )
+
         lines = ["**⚽ Goals:**"]
-        for goal in goal_events:
+        for goal in goal_events_sorted:
             scorer = goal.player_name or "Unknown"
             minute_display = format_minute(goal)
 
