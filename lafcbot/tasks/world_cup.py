@@ -568,7 +568,17 @@ class WorldCupTask:
 
             # Initialize match state if not tracked
             if match_id not in self.monitored_matches:
-                logger.info(f"Starting to monitor match: {match_name}")
+                # Don't start monitoring a match that's already finished
+                # This prevents re-adding matches that were already processed and removed
+                if details.match.is_finished:
+                    logger.info(
+                        f"Skipping monitoring of already-finished match: {match_name}"
+                    )
+                    return
+
+                logger.info(
+                    f"Starting to monitor match: {match_name} (is_finished={details.match.is_finished})"
+                )
                 # Populate last_events with ALL current events so we don't notify
                 # about events that already occurred before we started monitoring
                 # IMPORTANT: Include half-events if match already started, to avoid
@@ -599,7 +609,6 @@ class WorldCupTask:
                     "extra_time_sent": False,
                     "penalties_sent": False,
                     "start_sent": False,
-                    "summary_sent": False,
                     "initialized_at": datetime.now(self.timezone),
                     "page_slug": match.page_slug,
                 }
@@ -873,10 +882,6 @@ class WorldCupTask:
             if not state.get("was_live"):
                 continue
 
-            # Skip if we already sent the summary
-            if state.get("summary_sent"):
-                continue
-
             try:
                 # Get fresh match details
                 details = await self.fotmob_client.get_match_details(
@@ -888,18 +893,22 @@ class WorldCupTask:
                     logger.info(
                         f"Match {details.match.home_team.name} vs {details.match.away_team.name} finished, sending summary"
                     )
-                    # Mark summary as sent BEFORE calling _send_match_summary to prevent
-                    # duplicates if the match is checked again before dict deletion
-                    state["summary_sent"] = True
+                    # Remove from monitoring IMMEDIATELY to prevent duplicate processing
+                    # in the next poll cycle.
+                    del self.monitored_matches[match_id]
 
                     # Match finished, send summary
                     # Pass was_monitored=True since we were actively tracking this match
-                    await self.notifier.notify_match_summary(
-                        details, STALE_EVENT_THRESHOLD, was_monitored=True
-                    )
-
-                    # Remove from monitoring
-                    del self.monitored_matches[match_id]
+                    try:
+                        await self.notifier.notify_match_summary(
+                            details, STALE_EVENT_THRESHOLD, was_monitored=True
+                        )
+                    except Exception as notify_error:
+                        logger.error(
+                            f"Failed to send final summary for match {match_id}: {notify_error}",
+                            exc_info=True,
+                        )
+                        # Don't re-raise - match is already deleted, don't want to retry
                 elif details:
                     logger.debug(
                         f"Match {details.match.home_team.name} vs {details.match.away_team.name} "
