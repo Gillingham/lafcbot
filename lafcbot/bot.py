@@ -46,11 +46,11 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 world_cup_task = None
-
+_ready_once = False  # Tracks whether on_ready setup has already run to avoid dupe instances
 
 @bot.event
 async def on_ready():
-    global world_cup_task
+    global world_cup_task, _ready_once
 
     print(f"Logged in as: {bot.user} (ID: {bot.user.id})")
     print("Connected guilds:")
@@ -58,6 +58,13 @@ async def on_ready():
         # use guild.member_count to avoid iterating members (no privileged intent required)
         print(f"- {g.name} (ID: {g.id}) — {g.member_count} members")
     print("------")
+
+    # Added to avoid duplicate instances being created on reconnect
+    if _ready_once:
+        # on_ready fires again on every gateway reconnect; only run setup once.
+        print("on_ready fired again (reconnect) — skipping re-initialization")
+        return
+    _ready_once = True
 
     # Initialize database
     try:
