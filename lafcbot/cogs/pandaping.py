@@ -165,6 +165,40 @@ class PandaPingCog(commands.Cog):
             )
             await db.commit()
 
+    async def _check_last_game_was_win(self, guild_id: str) -> bool:
+        """Check if the most recent game for this guild was a Dodgers win.
+
+        Args:
+            guild_id: Guild ID to check
+
+        Returns:
+            True if the most recent game was a win, False otherwise (loss or no games)
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT home_score, away_score
+                FROM panda_pings
+                WHERE guild_id = ?
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (guild_id,),
+            )
+            result = await cursor.fetchone()
+
+            if not result:
+                # No games recorded yet
+                logger.debug(f"Guild {guild_id}: No games recorded in database")
+                return False
+
+            home_score, away_score = result
+            is_win = home_score > away_score
+            logger.debug(
+                f"Guild {guild_id}: Last game was {home_score}-{away_score} ({'win' if is_win else 'loss'})"
+            )
+            return is_win
+
     async def _check_dodgers_schedule(self):
         """Check ESPN MLB schedule for Dodgers home games."""
         try:
@@ -286,7 +320,7 @@ class PandaPingCog(commands.Cog):
 
     @tasks.loop(hours=24)
     async def daily_panda_reminder(self):
-        """Send daily Panda deal reminder to all configured servers."""
+        """Send daily Panda deal reminder to all configured servers (only after wins)."""
         if not self.server_configs:
             logger.debug("No servers configured for PandaPing, skipping daily reminder")
             return
@@ -304,6 +338,14 @@ class PandaPingCog(commands.Cog):
                 if not guild_id:
                     logger.warning(
                         "Server config missing guild_id for daily reminder, skipping"
+                    )
+                    continue
+
+                # Check if the most recent game was a win
+                last_game_was_win = await self._check_last_game_was_win(guild_id)
+                if not last_game_was_win:
+                    logger.debug(
+                        f"Guild {guild_id}: Last game was not a win, skipping daily reminder"
                     )
                     continue
 
@@ -338,7 +380,7 @@ class PandaPingCog(commands.Cog):
                 message = f"{role.mention} ||Daily reminder: Panda Express deal for Dodgers home wins!||"
                 await channel.send(message)
                 logger.info(
-                    f"Sent daily panda reminder to #{channel_name} in {guild.name}"
+                    f"Sent daily panda reminder to #{channel_name} in {guild.name} (last game was a win)"
                 )
 
             except Exception as e:
