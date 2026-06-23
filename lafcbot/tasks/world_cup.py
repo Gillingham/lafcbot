@@ -10,8 +10,8 @@ from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
 from lafcbot.match_events.detectors import (
-    is_cancelled_goal,
     is_card_event,
+    is_goal_cancelled_by_var,
     is_half_event,
     is_substitution_event,
     normalize_half_type,
@@ -692,20 +692,18 @@ class WorldCupTask:
         # Get current event IDs
         old_event_ids = {e["id"] for e in state["last_events"]}
 
-        # Find new goal events (excluding cancelled goals)
+        # Find new goal events (all goals, VAR cancellations are separate events)
         new_goals = [
             e
             for e in details.events
-            if e.id not in old_event_ids
-            and e.type.lower() == "goal"
-            and not getattr(e, "cancelled", False)
+            if e.id not in old_event_ids and e.type.lower() == "goal"
         ]
 
-        # Find new cancelled goal events
-        new_cancelled_goals = [
+        # Find new VAR cancelled goal events
+        new_var_cancellations = [
             e
             for e in details.events
-            if e.id not in old_event_ids and is_cancelled_goal(e)
+            if e.id not in old_event_ids and is_goal_cancelled_by_var(e)
         ]
 
         # Since we now initialize last_events with all existing events when monitoring starts,
@@ -715,8 +713,8 @@ class WorldCupTask:
         for goal in new_goals:
             await self.notifier.notify_goal(channel, details, goal)
 
-        for cancelled_goal in new_cancelled_goals:
-            await self.notifier.notify_cancelled_goal(channel, details, cancelled_goal)
+        for var_event in new_var_cancellations:
+            await self.notifier.notify_var_cancelled_goal(channel, details, var_event)
 
     async def _check_for_events(self, details, state, channel):
         """Generic event checker that delegates to specific event handlers."""

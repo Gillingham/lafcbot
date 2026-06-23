@@ -119,19 +119,60 @@ def is_half_event(event) -> bool:
     return False
 
 
-def is_cancelled_goal(event) -> bool:
+def is_var_event(event) -> bool:
     """
-    Check if an event is a cancelled/disallowed goal (e.g., VAR ruled No Goal).
+    Check if an event is a VAR review event.
 
     Args:
-        event: Event object with type and cancelled attributes
+        event: Event object with type attribute
 
     Returns:
-        True if event is a goal that was cancelled, False otherwise
+        True if event is a VAR event, False otherwise
     """
     try:
-        if event.type and str(event.type).lower() == "goal":
-            return getattr(event, "cancelled", False)
+        return event.type and str(event.type).upper() == "VAR"
     except Exception:
-        pass
-    return False
+        return False
+
+
+def is_goal_cancelled_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a cancelled/disallowed goal.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event cancelled a goal, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return "var_goal_cancelled" in decision_keys
+
+
+def get_var_cancellation_reason(event) -> str | None:
+    """
+    Extract the cancellation reason from a VAR event.
+
+    Args:
+        event: VAR event object with var_decision attribute
+
+    Returns:
+        Human-readable cancellation reason, or None if not available
+    """
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return None
+
+    decision = var_data.get("decision", {})
+    values = decision.get("value", [])
+
+    # values[0] is typically "Goal ruled out", values[1] is the reason
+    return values[1] if len(values) > 1 else None

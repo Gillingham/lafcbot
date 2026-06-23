@@ -12,6 +12,7 @@ class Team:
     name: str
     logo_url: str | None = None
 
+
 @dataclass
 class CountryInfo:
     """Represents country identifiers and FIFA ranking data."""
@@ -38,9 +39,8 @@ class MatchEvent:
     own_goal: bool = False  # Whether this is an own goal
     card_color: str | None = None  # "yellow" or "red" when applicable
     half_type: str | None = None  # "HT" for half-time, "FT" for full-time
-    cancelled: bool = (
-        False  # Whether this goal was disallowed/ruled No Goal (e.g., via VAR)
-    )
+    var_decision: dict | None = None  # VAR decision data for VAR events
+    # Structure: {"pendingDecision": bool, "decision": {"key": [str], "value": [str]}}
 
 
 @dataclass

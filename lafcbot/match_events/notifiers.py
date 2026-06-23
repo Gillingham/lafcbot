@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from lafcbot.match_events.detectors import get_card_color
+from lafcbot.match_events.detectors import get_card_color, get_var_cancellation_reason
 from lafcbot.match_events.formatters import (
     format_cancelled_goal_notification,
     format_minute,
@@ -336,14 +336,14 @@ class MatchNotifier:
                     )
                 )
 
-    async def notify_cancelled_goal(self, channel, details, goal_event):
+    async def notify_var_cancelled_goal(self, channel, details, var_event):
         """
-        Send a cancelled/disallowed goal notification to Discord (e.g., VAR ruled No Goal).
+        Send a VAR cancelled goal notification to Discord.
 
         Args:
             channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
-            goal_event: Cancelled goal event object
+            var_event: VAR event object indicating goal cancellation
         """
         match = details.match
         home_team = match.home_team.name
@@ -354,27 +354,31 @@ class MatchNotifier:
         home_display, away_display = self._get_team_displays(match)
         home_goals, away_goals = self._get_scores(match)
 
-        scorer = goal_event.player_name or "Unknown"
-        minute_display = format_minute(goal_event)
+        scorer = var_event.player_name or "Unknown"
+        minute_display = format_minute(var_event)
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
         team_display = self._get_event_team_display(
-            goal_event, match, home_team, away_team, home_flag, away_flag
+            var_event, match, home_team, away_team, home_flag, away_flag
         )
+
+        # Extract cancellation reason from VAR decision
+        reason = get_var_cancellation_reason(var_event)
 
         message = format_cancelled_goal_notification(
             scorer=scorer,
             team_display=team_display,
             minute_display=minute_display,
             score_line=score_line,
+            reason=reason,
         )
 
         # Send to all configured live channels
         guild_channels = self._get_live_channels()
         if guild_channels:
             logger.info(
-                f"Sending cancelled goal notification to {len(guild_channels)} channel(s)"
+                f"Sending VAR cancelled goal notification to {len(guild_channels)} channel(s)"
             )
             await send_to_guild_channels(self.bot, message, guild_channels)
 

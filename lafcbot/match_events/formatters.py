@@ -21,6 +21,7 @@ def format_cancelled_goal_notification(
     team_display: str,
     minute_display: str,
     score_line: str,
+    reason: str | None = None,
 ) -> str:
     """
     Format a cancelled/disallowed goal notification message.
@@ -30,21 +31,24 @@ def format_cancelled_goal_notification(
         team_display: Formatted team display (with flag if applicable)
         minute_display: Formatted minute string (e.g., "65+2'")
         score_line: Full score line with team names and scores
+        reason: Optional cancellation reason (e.g., "offside", "foul")
 
     Returns:
         Formatted notification message string
 
     Example:
         >>> format_cancelled_goal_notification(
-        ...     "Musa Al-Taamari",
-        ...     "Jordan 🇯🇴",
-        ...     "65+2'",
-        ...     "🇦🇹 Austria 1-0 Jordan 🇯🇴"
+        ...     "Azizjon Ganiev",
+        ...     "Uzbekistan 🇺🇿",
+        ...     "29'",
+        ...     "🇵🇹 Portugal 2-0 Uzbekistan 🇺🇿",
+        ...     "foul"
         ... )
-        '🚫 **NO GOAL!** Goal disallowed\\n**Scorer:** Musa Al-Taamari (Jordan 🇯🇴) 65+2\\'\\n**Score remains:** 🇦🇹 Austria 1-0 Jordan 🇯🇴'
+        '🚫 **NO GOAL!** Goal disallowed (foul)\\n**Scorer:** Azizjon Ganiev (Uzbekistan 🇺🇿) 29\\'\\n**Score remains:** 🇵🇹 Portugal 2-0 Uzbekistan 🇺🇿'
     """
+    reason_text = f" ({reason})" if reason else ""
     return (
-        f"🚫 **NO GOAL!** Goal disallowed\n"
+        f"🚫 **NO GOAL!** Goal disallowed{reason_text}\n"
         f"**Scorer:** {scorer} ({team_display}) {minute_display}\n"
         f"**Score remains:** {score_line}"
     )

@@ -1041,7 +1041,7 @@ class FotMobClient:
                     own_goal=own_goal_flag or False,
                     card_color=card_color_val,
                     half_type=half_type_val,
-                    cancelled=event_data.get("cancelled", False),
+                    var_decision=event_data.get("VAR") if event_type == "VAR" else None,
                 )
             )
 
