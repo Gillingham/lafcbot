@@ -72,8 +72,12 @@ async def send_to_guild_channels(
         bot: Discord bot instance with guilds attribute
         message: Message text to send
         guild_channels: List of (guild_id, channel_name) tuples
+
+    Returns:
+        List of Discord message objects that were successfully sent
     """
     sent_channel_ids = set()
+    sent_messages = []
 
     for guild_id, channel_name in guild_channels:
         if not guild_id or not channel_name:
@@ -97,10 +101,13 @@ async def send_to_guild_channels(
             continue
 
         try:
-            await channel.send(message)
+            msg = await channel.send(message)
+            sent_messages.append(msg)
             sent_channel_ids.add(channel.id)
             logger.debug(f"Message sent to #{channel_name} in {guild.name}")
         except Exception as e:
             logger.error(
                 f"Failed to send message to #{channel_name} in guild {guild.name}: {e}"
             )
+
+    return sent_messages

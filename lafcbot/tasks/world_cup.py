@@ -620,6 +620,7 @@ class WorldCupTask:
                     "start_sent": False,
                     "initialized_at": datetime.now(self.timezone),
                     "page_slug": match.page_slug,
+                    "goal_messages": {},  # Maps event_id to list of Discord message objects
                 }
                 if initial_events:
                     logger.info(
@@ -706,6 +707,11 @@ class WorldCupTask:
             if e["type"].lower() == "goal"
         }
 
+        # Also track just event IDs to detect scorer updates
+        old_goal_ids = {
+            e["id"] for e in state["last_events"] if e["type"].lower() == "goal"
+        }
+
         # Find new goal events (all goals, VAR cancellations are separate events)
         # A goal is "new" if its (id, player_name) combination hasn't been seen before
         new_goals = [
@@ -713,6 +719,10 @@ class WorldCupTask:
             for e in details.events
             if e.type.lower() == "goal" and (e.id, e.player_name) not in old_goal_keys
         ]
+
+        # Separate into truly new goals vs scorer updates
+        truly_new_goals = [g for g in new_goals if g.id not in old_goal_ids]
+        scorer_updates = [g for g in new_goals if g.id in old_goal_ids]
 
         # For VAR events, use only event ID since they're distinct events
         old_event_ids = {e["id"] for e in state["last_events"]}
@@ -727,8 +737,30 @@ class WorldCupTask:
         # event ID is new, we should notify about it.
         # UPDATE: Now also detects when scorer changes from TBD to actual player name.
 
-        for goal in new_goals:
-            await self.notifier.notify_goal(channel, details, goal)
+        # Send notifications for truly new goals
+        for goal in truly_new_goals:
+            messages = await self.notifier.notify_goal(channel, details, goal)
+            # Store message references for potential updates
+            if messages and "goal_messages" in state:
+                state["goal_messages"][goal.id] = messages
+
+        # Edit existing messages for scorer updates (TBD -> actual player)
+        for goal in scorer_updates:
+            if "goal_messages" in state and goal.id in state["goal_messages"]:
+                logger.info(
+                    f"Scorer updated for goal {goal.id}: editing existing messages"
+                )
+                await self.notifier.update_goal_notification(
+                    details, goal, state["goal_messages"][goal.id]
+                )
+            else:
+                # Fallback: send as new if we don't have the message reference
+                logger.warning(
+                    f"Scorer updated for goal {goal.id} but no message reference found, sending as new"
+                )
+                messages = await self.notifier.notify_goal(channel, details, goal)
+                if messages and "goal_messages" in state:
+                    state["goal_messages"][goal.id] = messages
 
         # Handle VAR events by type
         for var_event in new_var_events:

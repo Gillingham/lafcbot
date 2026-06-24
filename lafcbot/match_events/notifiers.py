@@ -283,6 +283,9 @@ class MatchNotifier:
             channel: Discord channel to send to (unused in multi-server mode)
             details: MatchDetails object
             goal_event: Goal event object
+
+        Returns:
+            List of Discord message objects that were sent
         """
         match = details.match
         home_team = match.home_team.name
@@ -327,11 +330,15 @@ class MatchNotifier:
 
         # Send to all configured live channels
         guild_channels = self._get_live_channels()
+        sent_messages = []
+
         if guild_channels:
             logger.info(
                 f"Sending goal notification to {len(guild_channels)} channel(s)"
             )
-            await send_to_guild_channels(self.bot, message, guild_channels)
+            sent_messages = await send_to_guild_channels(
+                self.bot, message, guild_channels
+            )
 
             # Try to fetch Reddit clip for all sent messages
             if self.reddit_client and self.config.get("live_monitoring", {}).get(
@@ -349,6 +356,72 @@ class MatchNotifier:
                         away_goals,
                     )
                 )
+
+        return sent_messages
+
+    async def update_goal_notification(self, details, goal_event, messages):
+        """
+        Update an existing goal notification with new scorer information.
+
+        Args:
+            details: MatchDetails object
+            goal_event: Updated goal event object with new player_name
+            messages: List of Discord message objects to update
+        """
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+
+        home_display, away_display = self._get_team_displays(match)
+        home_goals, away_goals = self._get_scores(match)
+
+        # Determine which team scored
+        scoring_team = (
+            home_team if goal_event.team_id == match.home_team.id else away_team
+        )
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        # Build updated message
+        scorer = goal_event.player_name or "Unknown"
+        minute_display = format_minute(goal_event)
+
+        score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
+
+        message = f"⚽ **GOAL!** {score_line}\n\n"
+
+        # Get team display for the scoring team (with flag)
+        is_home_scorer = goal_event.team_id == match.home_team.id
+        scoring_team_display = (
+            f"{home_flag} {home_team}"
+            if home_flag and is_home_scorer
+            else f"{away_flag} {away_team}"
+            if away_flag and not is_home_scorer
+            else scoring_team
+        )
+
+        if goal_event.own_goal:
+            message += (
+                f"**Own Goal:** {scorer} ({scoring_team_display}) {minute_display}"
+            )
+        else:
+            message += f"**Scorer:** {scorer} ({scoring_team_display}) {minute_display}"
+            if goal_event.assist_name:
+                message += f"\n**Assist:** {goal_event.assist_name}"
+
+        # Edit all messages
+        updated_count = 0
+        for msg in messages:
+            try:
+                await msg.edit(content=message)
+                updated_count += 1
+                logger.debug(f"Updated goal notification message {msg.id}")
+            except Exception as e:
+                logger.error(f"Failed to edit message {msg.id}: {e}")
+
+        logger.info(
+            f"Updated {updated_count}/{len(messages)} goal notifications with scorer: {scorer}"
+        )
 
     async def notify_var_cancelled_goal(self, channel, details, var_event):
         """
