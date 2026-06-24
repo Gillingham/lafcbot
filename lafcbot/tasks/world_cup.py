@@ -10,10 +10,19 @@ from discord.ext import tasks
 
 from lafcbot.clients import reddit_client
 from lafcbot.match_events.detectors import (
+    get_var_decision_keys,
+    get_var_decision_type,
+    get_var_decision_values,
     is_card_event,
+    is_card_given_by_var,
+    is_card_removed_by_var,
     is_goal_cancelled_by_var,
     is_half_event,
+    is_penalty_awarded_by_var,
+    is_penalty_cancelled_by_var,
+    is_penalty_retake_by_var,
     is_substitution_event,
+    is_var_event,
     normalize_half_type,
 )
 from lafcbot.match_events.notifiers import MatchNotifier
@@ -689,32 +698,74 @@ class WorldCupTask:
         if not notifications_config.get("goals", True):
             return
 
-        # Get current event IDs
-        old_event_ids = {e["id"] for e in state["last_events"]}
+        # Get current goal event keys as (id, player_name) tuples
+        # This allows us to detect when a goal's scorer changes from "TBD" to actual name
+        old_goal_keys = {
+            (e["id"], e.get("player_name"))
+            for e in state["last_events"]
+            if e["type"].lower() == "goal"
+        }
 
         # Find new goal events (all goals, VAR cancellations are separate events)
+        # A goal is "new" if its (id, player_name) combination hasn't been seen before
         new_goals = [
             e
             for e in details.events
-            if e.id not in old_event_ids and e.type.lower() == "goal"
+            if e.type.lower() == "goal" and (e.id, e.player_name) not in old_goal_keys
         ]
 
-        # Find new VAR cancelled goal events
-        new_var_cancellations = [
-            e
-            for e in details.events
-            if e.id not in old_event_ids and is_goal_cancelled_by_var(e)
+        # For VAR events, use only event ID since they're distinct events
+        old_event_ids = {e["id"] for e in state["last_events"]}
+
+        # Find all new VAR events
+        new_var_events = [
+            e for e in details.events if e.id not in old_event_ids and is_var_event(e)
         ]
 
         # Since we now initialize last_events with all existing events when monitoring starts,
         # new_goals should only contain truly new events. No staleness check needed - if the
         # event ID is new, we should notify about it.
+        # UPDATE: Now also detects when scorer changes from TBD to actual player name.
 
         for goal in new_goals:
             await self.notifier.notify_goal(channel, details, goal)
 
-        for var_event in new_var_cancellations:
-            await self.notifier.notify_var_cancelled_goal(channel, details, var_event)
+        # Handle VAR events by type
+        for var_event in new_var_events:
+            # Log all VAR decision keys for discovery
+            keys = get_var_decision_keys(var_event)
+            values = get_var_decision_values(var_event)
+            decision_type = get_var_decision_type(var_event)
+
+            logger.info(
+                f"VAR event detected in {details.match.home_team.name} vs {details.match.away_team.name}: "
+                f"type={decision_type}, keys={keys}, values={values}, player={var_event.player_name}"
+            )
+
+            # Notify based on VAR decision type
+            if is_goal_cancelled_by_var(var_event):
+                await self.notifier.notify_var_cancelled_goal(
+                    channel, details, var_event
+                )
+            elif is_card_removed_by_var(var_event):
+                await self.notifier.notify_var_card_removed(channel, details, var_event)
+            elif is_penalty_awarded_by_var(var_event):
+                await self.notifier.notify_var_penalty_awarded(
+                    channel, details, var_event
+                )
+            elif is_penalty_cancelled_by_var(var_event):
+                await self.notifier.notify_var_penalty_cancelled(
+                    channel, details, var_event
+                )
+            elif is_penalty_retake_by_var(var_event):
+                await self.notifier.notify_var_penalty_retake(
+                    channel, details, var_event
+                )
+            elif is_card_given_by_var(var_event):
+                await self.notifier.notify_var_card_given(channel, details, var_event)
+            else:
+                # Unknown VAR type - notify and log for discovery
+                await self.notifier.notify_var_unknown(channel, details, var_event)
 
     async def _check_for_events(self, details, state, channel):
         """Generic event checker that delegates to specific event handlers."""
@@ -744,9 +795,18 @@ class WorldCupTask:
         if not notifications_config.get("cards", True):
             return
 
-        old_event_ids = {e["id"] for e in state["last_events"]}
+        # Track cards by (id, player_name) to catch player name updates from TBD
+        # Use type check to identify card events in stored state
+        old_card_keys = {
+            (e["id"], e.get("player_name"))
+            for e in state["last_events"]
+            if "card" in str(e.get("type", "")).lower()
+        }
+
         new_cards = [
-            e for e in details.events if e.id not in old_event_ids and is_card_event(e)
+            e
+            for e in details.events
+            if is_card_event(e) and (e.id, e.player_name) not in old_card_keys
         ]
         logger.debug(
             f"Checking cards: {len(new_cards)} new card event(s) out of {len(details.events)} total events"
@@ -754,6 +814,7 @@ class WorldCupTask:
 
         # Since we initialize last_events with all existing events when monitoring starts,
         # new_cards should only contain truly new events.
+        # UPDATE: Now also detects when card player name changes from TBD to actual name.
         for card in new_cards:
             await self.notifier.notify_card(channel, details, card)
 

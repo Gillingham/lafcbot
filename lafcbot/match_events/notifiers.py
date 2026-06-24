@@ -382,6 +382,241 @@ class MatchNotifier:
             )
             await send_to_guild_channels(self.bot, message, guild_channels)
 
+    async def notify_var_card_removed(self, channel, details, var_event):
+        """
+        Send a VAR card removed notification to Discord.
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object indicating card removal
+        """
+        from lafcbot.match_events.detectors import get_var_decision_values
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        player = var_event.player_name or "Unknown"
+        minute_display = format_minute(var_event)
+
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        # Get VAR decision details
+        values = get_var_decision_values(var_event)
+        card_type = values[0] if values else "Card"
+
+        message = f"📺 **VAR:** {card_type} cancelled for {player} ({team_display}) {minute_display}"
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending VAR card removed notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+    async def notify_var_penalty_awarded(self, channel, details, var_event):
+        """
+        Send a VAR penalty awarded notification to Discord.
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object indicating penalty awarded
+        """
+        from lafcbot.match_events.detectors import get_var_decision_values
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        minute_display = format_minute(var_event)
+
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        # Get VAR decision details
+        values = get_var_decision_values(var_event)
+        reason = values[1] if len(values) > 1 else None
+
+        message = f"📺 **VAR: PENALTY AWARDED** to {team_display} {minute_display}"
+        if reason:
+            message += f"\nReason: {reason}"
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending VAR penalty awarded notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+    async def notify_var_card_given(self, channel, details, var_event):
+        """
+        Send a VAR card given notification to Discord.
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object indicating card given
+        """
+        from lafcbot.match_events.detectors import (
+            get_var_decision_keys,
+        )
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        player = var_event.player_name or "Unknown"
+        minute_display = format_minute(var_event)
+
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        # Determine card type from decision keys
+        keys = get_var_decision_keys(var_event)
+        if "var_red_card_given" in keys:
+            card_type = "Red Card"
+        else:
+            card_type = "Yellow Card"
+
+        message = f"📺 **VAR: {card_type} given** to {player} ({team_display}) {minute_display}"
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending VAR card given notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+    async def notify_var_penalty_cancelled(self, channel, details, var_event):
+        """
+        Send a VAR penalty cancelled notification to Discord.
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object indicating penalty cancelled
+        """
+        from lafcbot.match_events.detectors import get_var_decision_values
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        minute_display = format_minute(var_event)
+
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        # Get VAR decision details
+        values = get_var_decision_values(var_event)
+        reason = values[1] if len(values) > 1 else None
+
+        message = f"📺 **VAR: PENALTY CANCELLED** for {team_display} {minute_display}"
+        if reason:
+            message += f"\nReason: {reason}"
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending VAR penalty cancelled notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+    async def notify_var_penalty_retake(self, channel, details, var_event):
+        """
+        Send a VAR penalty retake notification to Discord.
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object indicating penalty should be retaken
+        """
+        from lafcbot.match_events.detectors import get_var_decision_values
+
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        minute_display = format_minute(var_event)
+
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
+
+        # Get VAR decision details
+        values = get_var_decision_values(var_event)
+        decision_text = values[0] if values else "Penalty to be retaken"
+
+        message = f"📺 **VAR: {decision_text}** for {team_display} {minute_display}"
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending VAR penalty retake notification to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
+    async def notify_var_unknown(self, channel, details, var_event):
+        """
+        Send a notification for unknown VAR decision types (for logging/discovery).
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            var_event: VAR event object with unknown decision type
+        """
+        from lafcbot.match_events.detectors import (
+            get_var_decision_keys,
+            get_var_decision_values,
+        )
+
+        match = details.match
+        player = var_event.player_name or "Unknown"
+        minute_display = format_minute(var_event)
+
+        keys = get_var_decision_keys(var_event)
+        values = get_var_decision_values(var_event)
+
+        # Log for debugging
+        logger.warning(
+            f"Unknown VAR decision type detected in {match.home_team.name} vs {match.away_team.name}: "
+            f"keys={keys}, values={values}"
+        )
+
+        # Send notification with raw data
+        message = (
+            f"📺 **VAR Review** {minute_display}\n"
+            f"Player: {player}\n"
+            f"Decision: {', '.join(values) if values else 'Unknown'}"
+        )
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
     async def _add_reddit_clip(
         self,
         message,

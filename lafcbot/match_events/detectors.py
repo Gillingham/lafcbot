@@ -157,6 +157,188 @@ def is_goal_cancelled_by_var(event) -> bool:
     return "var_goal_cancelled" in decision_keys
 
 
+def is_card_removed_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a yellow/red card was removed.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event removed a card, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return (
+        "var_yellow_card_removed" in decision_keys
+        or "var_red_card_removed" in decision_keys
+    )
+
+
+def is_penalty_awarded_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a penalty was awarded.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event awarded a penalty, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return "var_penalty_awarded" in decision_keys
+
+
+def is_card_given_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a yellow/red card was given.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event gave a card, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return (
+        "var_yellow_card_given" in decision_keys
+        or "var_red_card_given" in decision_keys
+    )
+
+
+def is_penalty_cancelled_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a penalty was cancelled.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event cancelled a penalty, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return "var_penalty_cancelled" in decision_keys
+
+
+def is_penalty_retake_by_var(event) -> bool:
+    """
+    Check if a VAR event indicates a penalty miss should be retaken.
+
+    Args:
+        event: Event object with type and var_decision attributes
+
+    Returns:
+        True if VAR event ordered penalty retake, False otherwise
+    """
+    if not is_var_event(event):
+        return False
+
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return False
+
+    decision = var_data.get("decision", {})
+    decision_keys = decision.get("key", [])
+    return "var_penalty_miss_retake" in decision_keys
+
+
+def get_var_decision_type(event) -> str | None:
+    """
+    Determine the type of VAR decision.
+
+    Args:
+        event: VAR event object with var_decision attribute
+
+    Returns:
+        VAR decision type: "goal_cancelled", "card_removed", "penalty_awarded",
+        "penalty_cancelled", "penalty_retake", "card_given", or "unknown"
+    """
+    if not is_var_event(event):
+        return None
+
+    if is_goal_cancelled_by_var(event):
+        return "goal_cancelled"
+    elif is_card_removed_by_var(event):
+        return "card_removed"
+    elif is_penalty_awarded_by_var(event):
+        return "penalty_awarded"
+    elif is_penalty_cancelled_by_var(event):
+        return "penalty_cancelled"
+    elif is_penalty_retake_by_var(event):
+        return "penalty_retake"
+    elif is_card_given_by_var(event):
+        return "card_given"
+    else:
+        return "unknown"
+
+
+def get_var_decision_keys(event) -> list[str]:
+    """
+    Extract all decision keys from a VAR event for logging/debugging.
+
+    Args:
+        event: VAR event object with var_decision attribute
+
+    Returns:
+        List of decision key strings, or empty list if not available
+    """
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return []
+
+    decision = var_data.get("decision", {})
+    return decision.get("key", [])
+
+
+def get_var_decision_values(event) -> list[str]:
+    """
+    Extract all decision values (human-readable descriptions) from a VAR event.
+
+    Args:
+        event: VAR event object with var_decision attribute
+
+    Returns:
+        List of decision value strings, or empty list if not available
+    """
+    var_data = getattr(event, "var_decision", None)
+    if not var_data or not isinstance(var_data, dict):
+        return []
+
+    decision = var_data.get("decision", {})
+    return decision.get("value", [])
+
+
 def get_var_cancellation_reason(event) -> str | None:
     """
     Extract the cancellation reason from a VAR event.
@@ -167,12 +349,6 @@ def get_var_cancellation_reason(event) -> str | None:
     Returns:
         Human-readable cancellation reason, or None if not available
     """
-    var_data = getattr(event, "var_decision", None)
-    if not var_data or not isinstance(var_data, dict):
-        return None
-
-    decision = var_data.get("decision", {})
-    values = decision.get("value", [])
-
+    values = get_var_decision_values(event)
     # values[0] is typically "Goal ruled out", values[1] is the reason
     return values[1] if len(values) > 1 else None
