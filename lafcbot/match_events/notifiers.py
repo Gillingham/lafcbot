@@ -295,6 +295,8 @@ class MatchNotifier:
         scoring_team = (
             home_team if goal_event.team_id == match.home_team.id else away_team
         )
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
 
         # Build message
         scorer = goal_event.player_name or "Unknown"
@@ -304,10 +306,22 @@ class MatchNotifier:
 
         message = f"⚽ **GOAL!** {score_line}\n\n"
 
+        # Get team display for the scoring team (with flag)
+        is_home_scorer = goal_event.team_id == match.home_team.id
+        scoring_team_display = (
+            f"{home_flag} {home_team}"
+            if home_flag and is_home_scorer
+            else f"{away_flag} {away_team}"
+            if away_flag and not is_home_scorer
+            else scoring_team
+        )
+
         if goal_event.own_goal:
-            message += f"**Own Goal:** {scorer} {minute_display}"
+            message += (
+                f"**Own Goal:** {scorer} ({scoring_team_display}) {minute_display}"
+            )
         else:
-            message += f"**Scorer:** {scorer} {minute_display}"
+            message += f"**Scorer:** {scorer} ({scoring_team_display}) {minute_display}"
             if goal_event.assist_name:
                 message += f"\n**Assist:** {goal_event.assist_name}"
 
