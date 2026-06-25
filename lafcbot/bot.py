@@ -46,7 +46,10 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 world_cup_task = None
-_ready_once = False  # Tracks whether on_ready setup has already run to avoid dupe instances
+_ready_once = (
+    False  # Tracks whether on_ready setup has already run to avoid dupe instances
+)
+
 
 @bot.event
 async def on_ready():
@@ -98,6 +101,12 @@ async def on_ready():
         print("Loaded pandaping cog")
     except Exception as e:
         print(f"Failed to load pandaping cog: {e}")
+
+    try:
+        bot.load_extension("lafcbot.cogs.xcancel")
+        print("Loaded xcancel cog")
+    except Exception as e:
+        print(f"Failed to load xcancel cog: {e}")
 
     # Load config and start World Cup task if enabled
     wc_config = config.get("world_cup", {})
