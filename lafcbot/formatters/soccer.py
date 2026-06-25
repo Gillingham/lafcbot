@@ -101,6 +101,7 @@ class SoccerFormatter(BaseFormatter):
         is_today: bool,
         is_tomorrow: bool,
         league_key: str,
+        is_later_today: bool = False,
     ) -> str:
         """
         Format !matches command output.
@@ -112,12 +113,15 @@ class SoccerFormatter(BaseFormatter):
             is_today: Whether showing today's matches
             is_tomorrow: Whether showing tomorrow's matches
             league_key: League key for team name overrides
+            is_later_today: Whether showing matches later today (changes header)
 
         Returns:
             Formatted matches list string
         """
         # Build header
-        if is_today:
+        if is_later_today:
+            header = f"**{league_name} - Matches Later Today:**"
+        elif is_today:
             header = f"**{league_name} - Today's Matches:**"
         elif is_tomorrow:
             header = f"**{league_name} - Tomorrow's Matches:**"
@@ -365,7 +369,7 @@ class SoccerFormatter(BaseFormatter):
             player_width = 15
             team_width = 4
             value_width = 5
-    
+
             # Header
             header = self.format_table_row(
                 ["#", "Player", "Team", stat_label],
@@ -373,14 +377,14 @@ class SoccerFormatter(BaseFormatter):
             )
             lines.append(header)
             lines.append("-" * len(header))
-    
+
             # Player rows
             for i, player in enumerate(stats_data, 1):
                 rank = str(i)
                 name = player.get("player_name", "Unknown")
                 team = player.get("team_name", "Unknown")
                 stat_val = f"{player.get(stat_type, 0)}"
-    
+
                 row = self.format_table_row(
                     [rank, name, team, stat_val],
                     [rank_width, player_width, team_width, value_width],
@@ -392,7 +396,7 @@ class SoccerFormatter(BaseFormatter):
             max_team_len = max(len(p.get("team_name", "")) for p in stats_data)
             player_width = min(max_player_len + 2, 25)
             team_width = min(max_team_len + 2, 25)
-    
+
             # Header
             header = self.format_table_row(
                 ["#", "Player", "Team", stat_label],
@@ -400,20 +404,19 @@ class SoccerFormatter(BaseFormatter):
             )
             lines.append(header)
             lines.append("-" * len(header))
-    
+
             # Player rows
             for i, player in enumerate(stats_data, 1):
                 rank = str(i)
                 name = player.get("player_name", "Unknown")
                 team = player.get("team_name", "Unknown")
                 stat_val = str(player.get(stat_type, 0))
-    
+
                 row = self.format_table_row(
                     [rank, name, team, stat_val],
                     [3, player_width, team_width, 6],
                 )
                 lines.append(row)
-
 
         lines.append("```")
         response = "\n".join(lines)

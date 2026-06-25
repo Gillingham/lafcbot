@@ -200,6 +200,7 @@ class WorldCupFormatter(BaseFormatter):
         fotmob_client,
         detailed_count: int = 5,
         simple_count: int = 5,
+        is_later_today: bool = False,
     ) -> str:
         """
         Format complete daily matches message (ready to send to Discord).
@@ -211,18 +212,21 @@ class WorldCupFormatter(BaseFormatter):
             fotmob_client: FotMob client for fetching details
             detailed_count: Number of matches to show with venue/broadcast (first N)
             simple_count: Number of additional matches to show without details
+            is_later_today: Whether showing matches later today (changes header)
 
         Returns:
             Complete formatted message string (truncated to 2000 chars if needed)
         """
         # Build header
-        if is_today:
+        if is_later_today:
+            date_header = "Matches Later Today"
+        elif is_today:
             date_header = "Today's Matches"
         else:
             date_str = display_date.strftime("%A, %b %d")
             date_header = f"Next Matches - {date_str}"
 
-        lines = ["**World Cup Matches**\n", f"**{date_header}:**"]
+        lines = [f"**{date_header}:**"]
 
         # Format first N matches with detailed info
         for match in matches[:detailed_count]:

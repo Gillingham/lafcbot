@@ -160,11 +160,18 @@ class SoccerCog(commands.Cog):
 
         # Filter matches based on time filter
         target_matches = []
+        later_matches = []  # Track later matches for "now" fallback
+
         for m in league_matches:
             # For "now" filter - only live matches
             if show_now_only:
                 if m.is_live:
                     target_matches.append(m)
+                # Also collect later matches as fallback
+                elif m.start_time:
+                    match_time_la = m.start_time.astimezone(la_tz)
+                    if match_time_la.date() == today_la and match_time_la > now_la:
+                        later_matches.append(m)
             # For "later" filter - only matches after current time today
             elif show_later_only:
                 if m.start_time:
@@ -180,24 +187,34 @@ class SoccerCog(commands.Cog):
                     if match_time_la.date() == target_date:
                         target_matches.append(m)
 
+        # For "now" filter: if no live matches, show later matches with different formatting
+        # For "later" filter: always show as "Matches Later Today"
+        show_later_today = show_later_only
+        if show_now_only and not target_matches and later_matches:
+            await ctx.send(f"No {league_display} matches currently active.")
+            target_matches = later_matches
+            show_later_today = True
+
         # Use World Cup formatter for World Cup matches, otherwise use regular formatter
         if league_key == "world_cup":
             response = await self.wc_formatter.format_daily_matches_message(
                 matches=target_matches,
                 display_date=target_date,
-                is_today=(target_date == today_la),
+                is_today=(target_date == today_la and not show_later_today),
                 fotmob_client=self.fotmob_client,
                 detailed_count=5,
                 simple_count=5,
+                is_later_today=show_later_today,
             )
         else:
             response = await self.formatter.format_matches_list(
                 matches=target_matches,
                 league_name=league_display,
                 target_date=target_date,
-                is_today=(target_date == today_la),
+                is_today=(target_date == today_la and not show_later_today),
                 is_tomorrow=(target_date == tomorrow_la),
                 league_key=league_key,
+                is_later_today=show_later_today,
             )
 
         await ctx.send(response)
