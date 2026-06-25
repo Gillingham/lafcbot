@@ -352,3 +352,31 @@ def get_var_cancellation_reason(event) -> str | None:
     values = get_var_decision_values(event)
     # values[0] is typically "Goal ruled out", values[1] is the reason
     return values[1] if len(values) > 1 else None
+
+
+def is_penalty_goal(event) -> bool:
+    """
+    Check if a goal event is a penalty kick goal.
+
+    Args:
+        event: Event object with type and goal_description_key attributes
+
+    Returns:
+        True if event is a penalty goal, False otherwise
+    """
+    if not event.type or event.type.lower() != "goal":
+        return False
+
+    # Check goal_description_key for "penalty"
+    goal_desc_key = getattr(event, "goal_description_key", None)
+    if goal_desc_key and goal_desc_key.lower() == "penalty":
+        return True
+
+    # Fallback: check shotmap_event situation
+    shotmap = getattr(event, "shotmap_event", None)
+    if shotmap and isinstance(shotmap, dict):
+        situation = shotmap.get("situation", "")
+        if situation and situation.lower() == "penalty":
+            return True
+
+    return False

@@ -4,7 +4,11 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from lafcbot.match_events.detectors import get_card_color, get_var_cancellation_reason
+from lafcbot.match_events.detectors import (
+    get_card_color,
+    get_var_cancellation_reason,
+    is_penalty_goal,
+)
 from lafcbot.match_events.formatters import (
     format_cancelled_goal_notification,
     format_minute,
@@ -358,7 +362,12 @@ class MatchNotifier:
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
-        message = f"⚽ **GOAL!** {score_line}\n\n"
+        # Check if this is a penalty goal
+        is_penalty = is_penalty_goal(goal_event)
+        goal_emoji = "🥅" if is_penalty else "⚽"
+        goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
+
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id
@@ -439,7 +448,12 @@ class MatchNotifier:
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
-        message = f"⚽ **GOAL!** {score_line}\n\n"
+        # Check if this is a penalty goal
+        is_penalty = is_penalty_goal(goal_event)
+        goal_emoji = "🥅" if is_penalty else "⚽"
+        goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
+
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id

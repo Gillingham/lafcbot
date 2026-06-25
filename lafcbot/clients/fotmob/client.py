@@ -1042,6 +1042,8 @@ class FotMobClient:
                     card_color=card_color_val,
                     half_type=half_type_val,
                     var_decision=event_data.get("VAR") if event_type == "VAR" else None,
+                    goal_description_key=event_data.get("goalDescriptionKey"),
+                    shotmap_event=event_data.get("shotmapEvent"),
                 )
             )
 
