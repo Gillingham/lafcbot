@@ -102,6 +102,7 @@ class SoccerFormatter(BaseFormatter):
         is_tomorrow: bool,
         league_key: str,
         is_later_today: bool = False,
+        is_now: bool = False,
     ) -> str:
         """
         Format !matches command output.
@@ -114,12 +115,15 @@ class SoccerFormatter(BaseFormatter):
             is_tomorrow: Whether showing tomorrow's matches
             league_key: League key for team name overrides
             is_later_today: Whether showing matches later today (changes header)
+            is_now: Whether showing live matches now (changes header)
 
         Returns:
             Formatted matches list string
         """
         # Build header
-        if is_later_today:
+        if is_now:
+            header = f"**{league_name} - Matches Happening Now:**"
+        elif is_later_today:
             header = f"**{league_name} - Matches Later Today:**"
         elif is_today:
             header = f"**{league_name} - Today's Matches:**"

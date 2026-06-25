@@ -190,6 +190,10 @@ class SoccerCog(commands.Cog):
         # For "now" filter: if no live matches, show later matches with different formatting
         # For "later" filter: always show as "Matches Later Today"
         show_later_today = show_later_only
+        show_now = show_now_only and bool(
+            target_matches
+        )  # Only true if we have live matches
+
         if show_now_only and not target_matches and later_matches:
             await ctx.send(f"No {league_display} matches currently active.")
             target_matches = later_matches
@@ -200,21 +204,27 @@ class SoccerCog(commands.Cog):
             response = await self.wc_formatter.format_daily_matches_message(
                 matches=target_matches,
                 display_date=target_date,
-                is_today=(target_date == today_la and not show_later_today),
+                is_today=(
+                    target_date == today_la and not show_later_today and not show_now
+                ),
                 fotmob_client=self.fotmob_client,
                 detailed_count=5,
                 simple_count=5,
                 is_later_today=show_later_today,
+                is_now=show_now,
             )
         else:
             response = await self.formatter.format_matches_list(
                 matches=target_matches,
                 league_name=league_display,
                 target_date=target_date,
-                is_today=(target_date == today_la and not show_later_today),
+                is_today=(
+                    target_date == today_la and not show_later_today and not show_now
+                ),
                 is_tomorrow=(target_date == tomorrow_la),
                 league_key=league_key,
                 is_later_today=show_later_today,
+                is_now=show_now,
             )
 
         await ctx.send(response)

@@ -201,6 +201,7 @@ class WorldCupFormatter(BaseFormatter):
         detailed_count: int = 5,
         simple_count: int = 5,
         is_later_today: bool = False,
+        is_now: bool = False,
     ) -> str:
         """
         Format complete daily matches message (ready to send to Discord).
@@ -213,12 +214,15 @@ class WorldCupFormatter(BaseFormatter):
             detailed_count: Number of matches to show with venue/broadcast (first N)
             simple_count: Number of additional matches to show without details
             is_later_today: Whether showing matches later today (changes header)
+            is_now: Whether showing live matches now (changes header)
 
         Returns:
             Complete formatted message string (truncated to 2000 chars if needed)
         """
         # Build header
-        if is_later_today:
+        if is_now:
+            date_header = "Matches Happening Now"
+        elif is_later_today:
             date_header = "Matches Later Today"
         elif is_today:
             date_header = "Today's Matches"
