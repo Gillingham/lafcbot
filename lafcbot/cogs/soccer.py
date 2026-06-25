@@ -9,8 +9,8 @@ from lafcbot.bot import load_config
 from lafcbot.clients.fotmob import FotMobClient, format_league_name, resolve_league_name
 from lafcbot.clients.fotmob.constants import LEAGUE_IDS
 from lafcbot.utils.checks import require_fotmob_client
-from lafcbot.utils.errors import handle_api_errors
 from lafcbot.utils.countries import get_fifa_trigram
+from lafcbot.utils.errors import handle_api_errors
 
 
 class SoccerCog(commands.Cog):
@@ -99,9 +99,11 @@ class SoccerCog(commands.Cog):
         """
         Show matches for a league.
 
-        Usage: !matches [league] [tomorrow]
+        Usage: !matches [league] [tomorrow|now|later]
         If no league is specified, uses the league configured for this channel.
         Add "tomorrow" to show tomorrow's matches instead of today's.
+        Add "now" to show only matches currently in progress.
+        Add "later" to show only matches happening later today.
 
         Examples:
           !matches                # Uses channel-configured league or MLS default
@@ -109,15 +111,29 @@ class SoccerCog(commands.Cog):
           !matches World Cup
           !matches World Cup tomorrow
           !matches tomorrow       # Tomorrow's matches for channel-configured league
-          !matches Premier
-          !matches Champions
+          !matches now            # Only live matches now
+          !matches later          # Only matches happening later today
+          !matches Premier now
+          !matches Champions later
         """
-        # Check if "tomorrow" is in the league parameter
+        # Check for time filters in the league parameter
         show_tomorrow = False
-        if league and "tomorrow" in league.lower():
-            show_tomorrow = True
-            # Remove "tomorrow" from league string
-            league = league.lower().replace("tomorrow", "").strip()
+        show_now_only = False
+        show_later_only = False
+
+        if league:
+            league_lower = league.lower()
+
+            if "tomorrow" in league_lower:
+                show_tomorrow = True
+                league = league_lower.replace("tomorrow", "").strip()
+            elif "now" in league_lower:
+                show_now_only = True
+                league = league_lower.replace("now", "").strip()
+            elif "later" in league_lower:
+                show_later_only = True
+                league = league_lower.replace("later", "").strip()
+
             if not league:
                 league = None
 
@@ -135,21 +151,34 @@ class SoccerCog(commands.Cog):
 
         # Get today's date in Los Angeles timezone
         la_tz = ZoneInfo("America/Los_Angeles")
-        today_la = datetime.now(la_tz).date()
+        now_la = datetime.now(la_tz)
+        today_la = now_la.date()
         tomorrow_la = today_la + timedelta(days=1)
 
         # Determine target date based on show_tomorrow flag
         target_date = tomorrow_la if show_tomorrow else today_la
 
-        # Filter matches for the target date
+        # Filter matches based on time filter
         target_matches = []
         for m in league_matches:
-            if not show_tomorrow and m.is_live:
-                target_matches.append(m)
-            elif m.start_time:
-                match_time_la = m.start_time.astimezone(la_tz)
-                if match_time_la.date() == target_date:
+            # For "now" filter - only live matches
+            if show_now_only:
+                if m.is_live:
                     target_matches.append(m)
+            # For "later" filter - only matches after current time today
+            elif show_later_only:
+                if m.start_time:
+                    match_time_la = m.start_time.astimezone(la_tz)
+                    if match_time_la.date() == today_la and match_time_la > now_la:
+                        target_matches.append(m)
+            # For tomorrow or default today view
+            else:
+                if not show_tomorrow and m.is_live:
+                    target_matches.append(m)
+                elif m.start_time:
+                    match_time_la = m.start_time.astimezone(la_tz)
+                    if match_time_la.date() == target_date:
+                        target_matches.append(m)
 
         # Use World Cup formatter for World Cup matches, otherwise use regular formatter
         if league_key == "world_cup":
@@ -352,10 +381,12 @@ class SoccerCog(commands.Cog):
         for stat in player_stats:
             team_name = stat.team_name or "Unknown"
             fifa_trigram = get_fifa_trigram(team_name)
-        
+
             stats_list.append(
                 {
-                    "player_name": truncate_player_name(stat.player_name, max_length=15),
+                    "player_name": truncate_player_name(
+                        stat.player_name, max_length=15
+                    ),
                     "team_name": fifa_trigram or team_name,
                     fotmob_stat_type: stat.stat_value,
                 }
@@ -383,6 +414,7 @@ def truncate_player_name(player_name: str, max_length: int = 17) -> str:
         return player_name
 
     return player_name[: max_length - 1] + "…"
+
 
 def setup(bot):
     """Setup function to add the cog."""
