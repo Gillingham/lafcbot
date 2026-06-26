@@ -61,5 +61,10 @@
         "daily_reminder": true
       }
     ]
+  },
+  "xcancel": {
+    "enabled_guilds": [
+      "609238113705000981"
+    ]
   }
 }

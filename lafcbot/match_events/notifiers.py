@@ -4,7 +4,11 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-from lafcbot.match_events.detectors import get_card_color, get_var_cancellation_reason
+from lafcbot.match_events.detectors import (
+    get_card_color,
+    get_var_cancellation_reason,
+    is_penalty_goal,
+)
 from lafcbot.match_events.formatters import (
     format_cancelled_goal_notification,
     format_minute,
@@ -230,6 +234,57 @@ class MatchNotifier:
 
         return "\n".join(lines)
 
+    def _format_card_list(
+        self,
+        details,
+        match,
+        home_team: str,
+        away_team: str,
+        home_flag: str,
+        away_flag: str,
+    ) -> str:
+        """
+        Format card events into a list string, ordered chronologically from earliest to latest.
+
+        Args:
+            details: MatchDetails object with events
+            match: Match object
+            home_team: Home team name
+            away_team: Away team name
+            home_flag: Home team flag emoji
+            away_flag: Away team flag emoji
+
+        Returns:
+            Formatted card list string, or empty string if no cards
+        """
+        from lafcbot.match_events.detectors import is_card_event
+
+        card_events = [e for e in details.events if is_card_event(e)]
+        if not card_events:
+            return ""
+
+        # Sort cards chronologically (earliest first)
+        card_events_sorted = sorted(
+            card_events, key=lambda e: (e.minute or 0, e.added_time or 0)
+        )
+
+        lines = ["**Cards:**"]
+        for card in card_events_sorted:
+            player = card.player_name or "Unknown"
+            minute_display = format_minute(card)
+
+            card_color = get_card_color(card)
+            emoji = "🟥" if card_color == "red" else "🟨"
+
+            team_display = self._get_event_team_display(
+                card, match, home_team, away_team, home_flag, away_flag
+            )
+
+            card_line = f"{minute_display} - {emoji} {player} ({team_display})"
+            lines.append(card_line)
+
+        return "\n".join(lines)
+
     async def notify_match_start(self, details):
         """
         Send a notification when a match starts.
@@ -307,7 +362,12 @@ class MatchNotifier:
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
-        message = f"⚽ **GOAL!** {score_line}\n\n"
+        # Check if this is a penalty goal
+        is_penalty = is_penalty_goal(goal_event)
+        goal_emoji = "🥅" if is_penalty else "⚽"
+        goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
+
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id
@@ -388,7 +448,12 @@ class MatchNotifier:
 
         score_line = f"{home_display} {home_goals}-{away_goals} {away_display}"
 
-        message = f"⚽ **GOAL!** {score_line}\n\n"
+        # Check if this is a penalty goal
+        is_penalty = is_penalty_goal(goal_event)
+        goal_emoji = "🥅" if is_penalty else "⚽"
+        goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
+
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id
@@ -909,13 +974,19 @@ class MatchNotifier:
 
         message = f"{emoji} **{title}:** {score_line}"
 
-        # Add goals for half-time
+        # Add goals and cards for half-time
         if half_type == "HT":
             goal_list = self._format_goal_list(
                 details, match, home_team, away_team, home_flag, away_flag
             )
             if goal_list:
                 message += f"\n\n{goal_list}"
+
+            card_list = self._format_card_list(
+                details, match, home_team, away_team, home_flag, away_flag
+            )
+            if card_list:
+                message += f"\n\n{card_list}"
 
         # Add winner/result for full-time
         if half_type == "FT":
@@ -1061,6 +1132,14 @@ class MatchNotifier:
         )
         if goal_list:
             lines.append(goal_list)
+            lines.append("")
+
+        # Add cards
+        card_list = self._format_card_list(
+            details, match, home_team, away_team, home_flag, away_flag
+        )
+        if card_list:
+            lines.append(card_list)
             lines.append("")
 
         # Add official highlights if available

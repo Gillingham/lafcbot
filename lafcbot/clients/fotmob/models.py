@@ -26,7 +26,13 @@ class CountryInfo:
 
 @dataclass
 class MatchEvent:
-    """Represents a match event (goal, card, substitution, etc.)."""
+    """Represents a match event (goal, card, substitution, etc.).
+
+    Penalty Detection:
+        Penalty goals appear as Goal events with:
+        - goal_description_key = "penalty"
+        - shotmap_event.situation = "Penalty"
+    """
 
     id: int  # Unique event ID for deduplication
     type: str  # "goal", "card", "substitution", etc.
@@ -41,6 +47,8 @@ class MatchEvent:
     half_type: str | None = None  # "HT" for half-time, "FT" for full-time
     var_decision: dict | None = None  # VAR decision data for VAR events
     # Structure: {"pendingDecision": bool, "decision": {"key": [str], "value": [str]}}
+    goal_description_key: str | None = None  # "penalty" for penalty goals
+    shotmap_event: dict | None = None  # Shot map data with situation field
 
 
 @dataclass
