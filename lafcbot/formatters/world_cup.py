@@ -202,7 +202,7 @@ class WorldCupFormatter(BaseFormatter):
         simple_count: int = 5,
         is_later_today: bool = False,
         is_now: bool = False,
-    ) -> str:
+    ) -> list[str]:
         """
         Format complete daily matches message (ready to send to Discord).
 
@@ -217,7 +217,7 @@ class WorldCupFormatter(BaseFormatter):
             is_now: Whether showing live matches now (changes header)
 
         Returns:
-            Complete formatted message string (truncated to 2000 chars if needed)
+            List of formatted message strings (split at 2000 char boundaries if needed)
         """
         # Build header
         if is_now:
@@ -251,7 +251,7 @@ class WorldCupFormatter(BaseFormatter):
             lines.append("")
 
         response = "\n".join(lines)
-        return self.truncate_for_discord(response)
+        return self.split_for_discord(response)
 
     def format_no_matches_message(self) -> str:
         """

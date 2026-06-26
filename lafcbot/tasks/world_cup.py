@@ -244,7 +244,7 @@ class WorldCupTask:
                 ]
 
                 # Format message using WorldCupFormatter
-                response = await self.formatter.format_daily_matches_message(
+                responses = await self.formatter.format_daily_matches_message(
                     matches=upcoming,
                     display_date=display_date,
                     is_today=(display_date == today),
@@ -258,7 +258,9 @@ class WorldCupTask:
                     include_regular=True, include_live=False
                 )
                 if guild_channels:
-                    await send_to_guild_channels(self.bot, response, guild_channels)
+                    # Send each message chunk
+                    for response in responses:
+                        await send_to_guild_channels(self.bot, response, guild_channels)
                     logger.info(
                         f"Sent daily World Cup matches to {len(guild_channels)} channel(s)"
                     )

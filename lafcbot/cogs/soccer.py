@@ -12,7 +12,11 @@ from lafcbot.clients.fotmob.constants import LEAGUE_IDS
 from lafcbot.utils.checks import require_fotmob_client
 from lafcbot.utils.countries import get_fifa_trigram
 from lafcbot.utils.errors import handle_api_errors
-from lafcbot.utils.text_image import render_discord_table_to_png, render_table_grid_to_png
+from lafcbot.utils.text_image import (
+    render_discord_table_to_png,
+    render_table_grid_to_png,
+)
+
 
 class SoccerCog(commands.Cog):
     """Cog for soccer match and standings commands."""
@@ -202,7 +206,7 @@ class SoccerCog(commands.Cog):
 
         # Use World Cup formatter for World Cup matches, otherwise use regular formatter
         if league_key == "world_cup":
-            response = await self.wc_formatter.format_daily_matches_message(
+            responses = await self.wc_formatter.format_daily_matches_message(
                 matches=target_matches,
                 display_date=target_date,
                 is_today=(
@@ -214,6 +218,9 @@ class SoccerCog(commands.Cog):
                 is_later_today=show_later_today,
                 is_now=show_now,
             )
+            # Send each message chunk
+            for response in responses:
+                await ctx.send(response)
         else:
             response = await self.formatter.format_matches_list(
                 matches=target_matches,
@@ -227,8 +234,7 @@ class SoccerCog(commands.Cog):
                 is_later_today=show_later_today,
                 is_now=show_now,
             )
-
-        await ctx.send(response)
+            await ctx.send(response)
 
     @commands.command()
     @require_fotmob_client()
@@ -362,8 +368,7 @@ class SoccerCog(commands.Cog):
 
         if current_batch:
             await ctx.send("\n".join(current_batch))
-            
-            
+
     @commands.command()
     @require_fotmob_client()
     @handle_api_errors("match details")
