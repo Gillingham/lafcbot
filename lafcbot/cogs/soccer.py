@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import discord
 from discord.ext import commands
 
 from lafcbot.bot import load_config
@@ -11,7 +12,7 @@ from lafcbot.clients.fotmob.constants import LEAGUE_IDS
 from lafcbot.utils.checks import require_fotmob_client
 from lafcbot.utils.countries import get_fifa_trigram
 from lafcbot.utils.errors import handle_api_errors
-
+from lafcbot.utils.text_image import render_discord_table_to_png, render_table_grid_to_png
 
 class SoccerCog(commands.Cog):
     """Cog for soccer match and standings commands."""
@@ -270,7 +271,9 @@ class SoccerCog(commands.Cog):
             return
 
         # Format standings for each table
-        all_tables = []
+        group_tables = []
+        extra_tables = []
+
         for table in tables:
             table_name = table.get("leagueName", "Standings")
             table_data = table.get("table", {}).get("all", [])
@@ -294,13 +297,54 @@ class SoccerCog(commands.Cog):
                     }
                 )
 
-            # Use formatter
             formatted = await self.formatter.format_standings_table(
                 standings_list, table_name, league_key
             )
-            all_tables.append(formatted)
 
-        # Batch tables into messages that fit Discord's 2000 char limit
+            if table_name.lower().startswith("best 3rd"):
+                extra_tables.append(formatted)
+            else:
+                group_tables.append(formatted)
+
+        # Special image layout for World Cup group standings
+        if league_key == "world_cup" and group_tables:
+            try:
+                groups_buffer = render_table_grid_to_png(
+                    group_tables,
+                    overall_title=f"{league_display} Group Standings",
+                    columns=2,
+                    advancing_third_place_count=8,
+                )
+
+                await ctx.send(
+                    file=discord.File(
+                        fp=groups_buffer,
+                        filename="world_cup_group_standings.png",
+                    )
+                )
+
+                # Send any extra table(s), like Best 3rd placed teams, as separate images
+                for i, extra_table in enumerate(extra_tables, start=1):
+                    extra_buffer = render_discord_table_to_png(
+                        extra_table,
+                        default_title="Best 3rd Placed Teams",
+                        highlight_top_n=8,
+                    )
+                    await ctx.send(
+                        file=discord.File(
+                            fp=extra_buffer,
+                            filename=f"world_cup_extra_standings_{i}.png",
+                        )
+                    )
+
+                return
+
+            except Exception:
+                # If image rendering fails, fall back to text below
+                pass
+
+        # Fallback: send regular text output
+        all_tables = group_tables + extra_tables
         current_batch = []
         current_length = 0
 
@@ -316,10 +360,10 @@ class SoccerCog(commands.Cog):
                 current_batch.append(table_text)
                 current_length += table_length
 
-        # Send remaining batch
         if current_batch:
             await ctx.send("\n".join(current_batch))
-
+            
+            
     @commands.command()
     @require_fotmob_client()
     @handle_api_errors("match details")
@@ -423,7 +467,22 @@ class SoccerCog(commands.Cog):
         message = await self.formatter.format_player_stats(
             stats_list, fotmob_stat_type, league_display
         )
-        await ctx.send(message)
+
+        try:
+            image_buffer = render_discord_table_to_png(
+                message,
+                default_title=f"{league_display} - Top {fotmob_stat_type.capitalize()}",
+            )
+
+            filename = f"{league_key}_{fotmob_stat_type}.png".replace(" ", "_").lower()
+
+            await ctx.send(
+                content=f"**{league_display} - Top {fotmob_stat_type.capitalize()}**",
+                file=discord.File(fp=image_buffer, filename=filename),
+            )
+        except Exception:
+            # Fallback to text if image rendering fails
+            await ctx.send(message)
 
 
 def truncate_player_name(player_name: str, max_length: int = 17) -> str:
