@@ -313,6 +313,7 @@ class SoccerCog(commands.Cog):
                     group_tables,
                     overall_title=f"{league_display} Group Standings",
                     columns=2,
+                    advancing_third_place_count=8,
                 )
 
                 await ctx.send(
@@ -327,6 +328,7 @@ class SoccerCog(commands.Cog):
                     extra_buffer = render_discord_table_to_png(
                         extra_table,
                         default_title="Best 3rd Placed Teams",
+                        highlight_top_n=8,
                     )
                     await ctx.send(
                         file=discord.File(
