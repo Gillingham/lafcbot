@@ -198,8 +198,6 @@ class WorldCupFormatter(BaseFormatter):
         display_date: date,
         is_today: bool,
         fotmob_client,
-        detailed_count: int = 5,
-        simple_count: int = 5,
         is_later_today: bool = False,
         is_now: bool = False,
     ) -> list[str]:
@@ -211,8 +209,6 @@ class WorldCupFormatter(BaseFormatter):
             display_date: Date being displayed
             is_today: Whether this is today's matches or future
             fotmob_client: FotMob client for fetching details
-            detailed_count: Number of matches to show with venue/broadcast (first N)
-            simple_count: Number of additional matches to show without details
             is_later_today: Whether showing matches later today (changes header)
             is_now: Whether showing live matches now (changes header)
 
@@ -232,21 +228,14 @@ class WorldCupFormatter(BaseFormatter):
 
         lines = [f"**{date_header}:**"]
 
-        # Format first N matches with detailed info
-        for match in matches[:detailed_count]:
+        # Format all matches with detailed info
+        for match in matches:
             formatted = await self.format_match_detailed(match, fotmob_client)
             lines.append(formatted.match_line)
             if formatted.venue_line:
                 lines.append(formatted.venue_line)
             if formatted.broadcast_line:
                 lines.append(formatted.broadcast_line)
-            # Add blank line between matches
-            lines.append("")
-
-        # Format remaining matches with simple info
-        for match in matches[detailed_count : detailed_count + simple_count]:
-            formatted = self.format_match_simple(match)
-            lines.append(formatted.match_line)
             # Add blank line between matches
             lines.append("")
 

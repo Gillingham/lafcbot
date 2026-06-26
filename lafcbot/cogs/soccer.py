@@ -213,8 +213,6 @@ class SoccerCog(commands.Cog):
                     target_date == today_la and not show_later_today and not show_now
                 ),
                 fotmob_client=self.fotmob_client,
-                detailed_count=5,
-                simple_count=5,
                 is_later_today=show_later_today,
                 is_now=show_now,
             )

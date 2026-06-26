@@ -249,8 +249,6 @@ class WorldCupTask:
                     display_date=display_date,
                     is_today=(display_date == today),
                     fotmob_client=self.fotmob_client,
-                    detailed_count=5,
-                    simple_count=5,
                 )
 
                 # Send to daily schedule channels only (not live channels)
