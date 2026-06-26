@@ -1,5 +1,6 @@
 """Utilities for rendering formatted text into PNG images."""
 
+import functools
 import logging
 import math
 import pathlib
@@ -11,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger(__name__)
 
 
+@functools.lru_cache
 def _load_mono_font(size: int):
     """
     Load a monospaced font.
