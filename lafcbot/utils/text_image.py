@@ -1,10 +1,14 @@
 """Utilities for rendering formatted text into PNG images."""
 
+import logging
 import math
+import pathlib
 import re
 from io import BytesIO
 
 from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
 
 
 def _load_mono_font(size: int):
@@ -26,12 +30,15 @@ def _load_mono_font(size: int):
         except OSError:
             continue
 
-    return ImageFont.load_default()
+    logger.debug("Could not load a monospaced font. Using embedded default.")
+    return ImageFont.truetype(
+        str(pathlib.Path(__file__).parent.resolve()) + "/DejaVuSansMono.ttf", size
+    )
 
 
 def _parse_discord_table_message(
-        message: str,
-        default_title: str = "Table",
+    message: str,
+    default_title: str = "Table",
 ) -> tuple[str, list[str]]:
     """
     Parse a Discord markdown table message into a title and body lines.
@@ -86,9 +93,9 @@ def _extract_rank_from_line(line: str) -> int | None:
 
 
 def _get_row_highlight_style(
-        rank: int | None,
-        highlight_rank_values: set[int] | None = None,
-        highlight_top_n: int = 0,
+    rank: int | None,
+    highlight_rank_values: set[int] | None = None,
+    highlight_top_n: int = 0,
 ) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
     """
     Return a row highlight style as (fill_color, outline_color).
@@ -106,25 +113,25 @@ def _get_row_highlight_style(
     # Automatic group qualifiers, usually ranks 1 and 2
     if rank in highlight_rank_values:
         return (
-            (28, 66, 48),    # dark green fill
+            (28, 66, 48),  # dark green fill
             (88, 176, 122),  # green outline
         )
 
     # Advancing best 3rd-place teams
     if highlight_top_n > 0 and rank <= highlight_top_n:
         return (
-            (92, 72, 24),     # dark gold fill
-            (212, 176, 72),   # gold outline
+            (92, 72, 24),  # dark gold fill
+            (212, 176, 72),  # gold outline
         )
 
     return None
 
 
 def render_discord_table_to_png(
-        message: str,
-        default_title: str = "Player Stats",
-        highlight_rank_values: set[int] | None = None,
-        highlight_top_n: int = 0,
+    message: str,
+    default_title: str = "Player Stats",
+    highlight_rank_values: set[int] | None = None,
+    highlight_top_n: int = 0,
 ) -> BytesIO:
     """
     Convert a Discord-formatted markdown table into a PNG image.
@@ -187,18 +194,10 @@ def render_discord_table_to_png(
     title_width, title_height = measure_text(title, title_font)
     body_width, line_height = measure_lines(lines, body_font)
 
-    body_height = (
-            len(lines) * line_height
-            + max(0, len(lines) - 1) * line_spacing
-    )
+    body_height = len(lines) * line_height + max(0, len(lines) - 1) * line_spacing
 
     image_width = max(min_width, title_width, body_width) + (padding_x * 2)
-    image_height = (
-            (padding_y * 2)
-            + title_height
-            + title_gap
-            + body_height
-    )
+    image_height = (padding_y * 2) + title_height + title_gap + body_height
 
     # Draw image
     image = Image.new("RGB", (image_width, image_height), background_color)
@@ -261,10 +260,10 @@ def render_discord_table_to_png(
 
 
 def render_table_grid_to_png(
-        table_messages: list[str],
-        overall_title: str = "Standings",
-        columns: int = 2,
-        advancing_third_place_count: int = 8,
+    table_messages: list[str],
+    overall_title: str = "Standings",
+    columns: int = 2,
+    advancing_third_place_count: int = 8,
 ) -> BytesIO:
     """
     Render multiple Discord-formatted standings tables into a grid PNG.
@@ -362,30 +361,30 @@ def render_table_grid_to_png(
     panel_width = max(
         min_panel_width,
         max(max_panel_title_width, max_panel_body_width) + (panel_padding_x * 2),
-        )
+    )
 
     panel_height = (
-            (panel_padding_y * 2)
-            + panel_title_height
-            + panel_title_gap
-            + (max_panel_line_count * body_line_height)
-            + (max(0, max_panel_line_count - 1) * line_spacing)
+        (panel_padding_y * 2)
+        + panel_title_height
+        + panel_title_gap
+        + (max_panel_line_count * body_line_height)
+        + (max(0, max_panel_line_count - 1) * line_spacing)
     )
 
     rows = math.ceil(len(blocks) / columns)
 
     image_width = (
-            (outer_padding * 2)
-            + (columns * panel_width)
-            + (max(0, columns - 1) * column_gap)
+        (outer_padding * 2)
+        + (columns * panel_width)
+        + (max(0, columns - 1) * column_gap)
     )
 
     image_height = (
-            (outer_padding * 2)
-            + overall_title_height
-            + top_gap
-            + (rows * panel_height)
-            + (max(0, rows - 1) * row_gap)
+        (outer_padding * 2)
+        + overall_title_height
+        + top_gap
+        + (rows * panel_height)
+        + (max(0, rows - 1) * row_gap)
     )
 
     # Draw image
