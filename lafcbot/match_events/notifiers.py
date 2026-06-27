@@ -745,8 +745,18 @@ class MatchNotifier:
         )
 
         match = details.match
-        player = var_event.player_name or "Unknown"
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        player = var_event.player_name or ""
         minute_display = format_minute(var_event)
+
+        # Get team display for the VAR event
+        team_display = self._get_event_team_display(
+            var_event, match, home_team, away_team, home_flag, away_flag
+        )
 
         keys = get_var_decision_keys(var_event)
         values = get_var_decision_values(var_event)
@@ -754,15 +764,25 @@ class MatchNotifier:
         # Log for debugging
         logger.warning(
             f"Unknown VAR decision type detected in {match.home_team.name} vs {match.away_team.name}: "
-            f"keys={keys}, values={values}"
+            f"keys={keys}, values={values}, player={player}, team={team_display}"
         )
 
-        # Send notification with raw data
-        message = (
-            f"📺 **VAR Review** {minute_display}\n"
-            f"Player: {player}\n"
-            f"Decision: {', '.join(values) if values else 'Unknown'}"
-        )
+        # Build notification message
+        decision_text = ", ".join(values) if values else "Unknown"
+
+        # Build message with team and optional player
+        if player:
+            message = (
+                f"📺 **VAR Review** {minute_display}\n"
+                f"Player: {player} ({team_display})\n"
+                f"Decision: {decision_text}"
+            )
+        else:
+            message = (
+                f"📺 **VAR Review** {minute_display}\n"
+                f"Team: {team_display}\n"
+                f"Decision: {decision_text}"
+            )
 
         # Send to all configured live channels
         guild_channels = self._get_live_channels()
