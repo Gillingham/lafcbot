@@ -9,18 +9,21 @@ from pathlib import Path
 
 import aiohttp
 
+from .reddit_playwright import RedditPlaywrightSearcher
+
 logger = logging.getLogger(__name__)
 
 
 class RedditGoalFetcher:
     """Fetches goal replay links from Reddit's r/soccer."""
 
-    def __init__(self, cache_path: str | None = None):
+    def __init__(self, cache_path: str | None = None, use_playwright: bool = True):
         """
         Initialize the Reddit goal fetcher.
 
         Args:
             cache_path: Path to cache file. Defaults to ~/.lafcbot/reddit_cache.json
+            use_playwright: Use Playwright for searching (True) or JSON API (False)
         """
         if cache_path is None:
             cache_dir = Path.home() / ".lafcbot"
@@ -29,7 +32,14 @@ class RedditGoalFetcher:
 
         self.cache_path = cache_path
         self.cache = self._load_cache()
-        self.session: aiohttp.ClientSession | None = None
+        self.use_playwright = use_playwright
+
+        if use_playwright:
+            self.playwright_searcher = RedditPlaywrightSearcher()
+            self.session = None
+        else:
+            self.session: aiohttp.ClientSession | None = None
+
         self._last_request_time = 0.0
         self._rate_limit_delay = (
             6.0  # 10 requests per minute = 6 seconds between requests
@@ -81,9 +91,18 @@ class RedditGoalFetcher:
             )
 
     async def close(self):
-        """Close the HTTP session."""
+        """Close the HTTP session and browser manager if using Playwright."""
         if self.session and not self.session.closed:
             await self.session.close()
+
+        if self.use_playwright:
+            from .browser_manager import BrowserManager
+
+            try:
+                manager = await BrowserManager.get_instance()
+                await manager.close()
+            except Exception as e:
+                logger.error(f"Error closing browser manager: {e}")
 
     async def search_goal(
         self,
@@ -191,26 +210,57 @@ class RedditGoalFetcher:
         Returns:
             Dict with url, title, post_url if found, else None
         """
-        import urllib.parse
+        if self.use_playwright:
+            return await self._try_playwright_search(query, match_time, sort)
+        else:
+            import urllib.parse
 
-        # Build search URL
-        start_time = int((match_time - timedelta(hours=12)).timestamp())
-        end_time = int((match_time + timedelta(hours=12)).timestamp())
+            # Build search URL
+            start_time = int((match_time - timedelta(hours=12)).timestamp())
+            end_time = int((match_time + timedelta(hours=12)).timestamp())
 
-        # Properly encode the query parameters
-        search_query = f"{query} flair:Media timestamp:{start_time}..{end_time}"
-        encoded_query = urllib.parse.quote(search_query)
+            # Properly encode the query parameters
+            search_query = f"{query} flair:Media timestamp:{start_time}..{end_time}"
+            encoded_query = urllib.parse.quote(search_query)
 
-        url = (
-            f"https://www.reddit.com/r/soccer/search.json?"
-            f"q={encoded_query}"
-            f"&restrict_sr=on&sort={sort}&limit=15"
-        )
+            url = (
+                f"https://www.reddit.com/r/soccer/search.json?"
+                f"q={encoded_query}"
+                f"&restrict_sr=on&sort={sort}&limit=15"
+            )
 
-        logger.info(f"Searching Reddit with URL: {url}")
+            logger.info(f"Searching Reddit with URL: {url}")
 
-        # Try direct Reddit API
-        return await self._try_direct_reddit(url, query)
+            # Try direct Reddit API
+            return await self._try_direct_reddit(url, query)
+
+    async def _try_playwright_search(
+        self, query: str, match_time: datetime, sort: str = "new"
+    ) -> dict | None:
+        """
+        Try Playwright-based Reddit search.
+
+        Args:
+            query: Search query
+            match_time: Match start time for filtering
+            sort: Sort order (relevance, top, new)
+
+        Returns:
+            Dict with url, title, post_url if found, else None
+        """
+        await self._rate_limit()
+
+        try:
+            result = await self.playwright_searcher.search(
+                query=query,
+                match_time=match_time,
+                sort=sort,
+                timeout=10.0,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Playwright search failed for query '{query}': {e}")
+            return None
 
     async def _try_direct_reddit(self, url: str, query: str) -> dict | None:
         """

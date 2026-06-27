@@ -47,7 +47,10 @@
     },
     "highlights": {
       "reddit_enabled": true,
-      "cache_path": "~/lafcbot/reddit_cache.json"
+      "use_playwright": true,
+      "cache_path": "~/lafcbot/reddit_cache.json",
+      "playwright_headless": true,
+      "playwright_timeout": 10.0
     }
   },
   "pandaping": {

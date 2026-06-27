@@ -59,7 +59,13 @@ class WorldCupTask:
         self.daily_task = None
         self.scheduler_task = None
         self.game_monitor_task = None
-        self.reddit_client = reddit_client.RedditGoalFetcher()
+
+        highlights_config = self.config.get("highlights", {})
+        use_playwright = highlights_config.get("use_playwright", True)
+        cache_path = highlights_config.get("cache_path")
+        self.reddit_client = reddit_client.RedditGoalFetcher(
+            cache_path=cache_path, use_playwright=use_playwright
+        )
 
         # Load timezone
         tz_name = self.config.get("timezone", "America/Los_Angeles")
