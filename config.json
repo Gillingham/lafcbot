@@ -41,16 +41,8 @@
         "substitutions": true,
         "half_events": true,
         "extra_time": true,
-        "penalties": true,
-        "include_reddit_clips": true
+        "penalties": true
       }
-    },
-    "highlights": {
-      "reddit_enabled": true,
-      "use_playwright": true,
-      "cache_path": "~/lafcbot/reddit_cache.json",
-      "playwright_headless": true,
-      "playwright_timeout": 10.0
     }
   },
   "pandaping": {

@@ -12,7 +12,6 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 - ⏰ Times displayed in configurable timezone (default: Pacific Time)
 - 🚩 Country flags for World Cup matches
 - ⚽ **Real-time goal notifications** for World Cup matches
-- 🎥 **Automatic Reddit replay clips** from r/soccer
 - 🏁 **Post-match summaries** with highlights
 - ⏱️ **Extra time and penalty shootout alerts**
 
@@ -35,10 +34,6 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 ```bash
 # Install dependencies
 uv sync
-
-# (Optional) Install Chromium for Reddit clip fetching via Playwright
-# Only needed if you want automatic Reddit goal clips (recommended for World Cup features)
-uv run playwright install chromium
 
 # Install pre-commit hooks (optional but recommended)
 uv tool install pre-commit
@@ -105,16 +100,8 @@ The bot uses `config.json` for settings. Create it in the project root:
         "substitutions": true,
         "half_events": true,
         "extra_time": true,
-        "penalties": true,
-        "include_reddit_clips": true
+        "penalties": true
       }
-    },
-    "highlights": {
-      "reddit_enabled": true,
-      "use_playwright": true,
-      "cache_path": "~/.lafcbot/reddit_cache.json",
-      "playwright_headless": true,
-      "playwright_timeout": 10.0
     }
   },
   "pandaping": {
@@ -259,16 +246,6 @@ The World Cup feature supports both legacy single-server and new multi-server co
 - `notifications.half_events`: Enable half-time and full-time notifications
 - `notifications.extra_time`: Enable extra time alerts
 - `notifications.penalties`: Enable penalty shootout alerts
-- `notifications.include_reddit_clips`: Automatically fetch Reddit replay clips for goals
-
-**Highlights:**
-- `highlights.reddit_enabled`: Enable Reddit r/soccer clip searching
-- `highlights.use_playwright`: Use Playwright browser automation (true) or JSON API (false, deprecated)
-- `highlights.cache_path`: Where to cache found clips
-- `highlights.playwright_headless`: Run browser in headless mode (default: true)
-- `highlights.playwright_timeout`: Search timeout in seconds (default: 10.0)
-
-**Note:** Reddit has disabled their public JSON API, so Playwright is now the recommended method for fetching clips. See [PLAYWRIGHT_REDDIT.md](PLAYWRIGHT_REDDIT.md) for detailed documentation.
 
 If `config.json` is missing, the bot will run with World Cup updates disabled.
 
@@ -559,36 +536,10 @@ The bot includes a complete async Python library for scraping FotMob:
 - **Sports Scores:** ESPN public scoreboard API (NBA, MLB, NHL, NFL, F1)
 - **Venue Information:** Extracted from match details pages
 - **TV Providers:** Extracted from match page HTML (US only)
-- **Goal Replay Clips:** Reddit r/soccer (via Playwright browser automation)
 - **Highlights:** FotMob official highlights URLs
 - **Weather Data:** Open-Meteo API (free, no API key required)
 - **Air Quality:** Open-Meteo Air Quality API
 
-### Reddit Clip Fetching
-
-The bot fetches goal replay clips from Reddit's r/soccer community using Playwright headless browser automation.
-
-**How it works:**
-
-- Uses Playwright to search old.reddit.com (simpler HTML structure)
-- Searches with time filtering (±12 hours from match time)
-- Filters by "Media" flair posts
-- Extracts video URLs from multiple sources (v.redd.it, Streamable, external embeds)
-- Results are cached for 24 hours to minimize searches
-- Gracefully handles errors and timeouts
-
-**Setup:**
-
-1. Install Chromium: `uv run playwright install chromium`
-2. Enable in config: `"use_playwright": true` (default)
-3. Clips are fetched automatically when available
-
-**Performance:**
-- Search latency: 2-4 seconds
-- Memory usage: ~150MB
-- One persistent browser instance shared across all searches
-
-For detailed documentation, see [PLAYWRIGHT_REDDIT.md](PLAYWRIGHT_REDDIT.md).
 
 ### Database
 
@@ -658,9 +609,6 @@ lafcbot/
 │       │   ├── parser.py      # HTML/JSON extraction
 │       │   └── __init__.py    # Public API
 │       ├── espn_client.py     # ESPN API for sports scores
-│       ├── reddit_client.py   # Reddit r/soccer clip fetcher with caching
-│       ├── reddit_playwright.py  # Playwright-based Reddit search
-│       ├── browser_manager.py    # Singleton Playwright browser manager
 │       └── open_meteo_client.py  # Open-Meteo weather API client
 ├── tests/                     # Unit tests
 │   ├── formatters/            # Formatter tests (46 tests)
@@ -670,7 +618,6 @@ lafcbot/
 ├── lafcbot.db                 # SQLite database (auto-created)
 ├── LATEPASS.md                # LatePass system documentation
 ├── WORLD_CUP_FEATURES.md      # Detailed World Cup features documentation
-├── PLAYWRIGHT_REDDIT.md       # Playwright Reddit integration documentation
 ├── .pre-commit-config.yaml    # Pre-commit hook configuration
 ├── ruff.toml                  # Ruff linting rules
 ├── pyproject.toml             # Dependencies and metadata
@@ -684,7 +631,6 @@ lafcbot/
 - `beautifulsoup4>=4.12.0` - HTML parsing
 - `lxml>=5.0.0` - Fast XML/HTML processing
 - `aiosqlite>=0.20.0` - Async SQLite database (for user preferences and latepass tracking)
-- `playwright>=1.40.0` - Browser automation for Reddit clip fetching (optional, recommended for World Cup features)
 
 ## Development
 

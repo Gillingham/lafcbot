@@ -1,6 +1,5 @@
 """Match event notification handling for Discord."""
 
-import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 class MatchNotifier:
     """Handles Discord notifications for match events."""
 
-    def __init__(self, bot, config, timezone, reddit_client=None, server_configs=None):
+    def __init__(self, bot, config, timezone, server_configs=None):
         """
         Initialize the match notifier.
 
@@ -30,13 +29,11 @@ class MatchNotifier:
             bot: Discord bot instance
             config: Configuration dict with channel names
             timezone: ZoneInfo timezone for time formatting
-            reddit_client: Optional Reddit client for fetching goal clips
             server_configs: Optional list of server configurations for multi-server support
         """
         self.bot = bot
         self.config = config
         self.timezone = timezone
-        self.reddit_client = reddit_client
         self.server_configs = server_configs or []
 
     def _format_team_display(self, team_name: str) -> str:
@@ -399,23 +396,6 @@ class MatchNotifier:
             sent_messages = await send_to_guild_channels(
                 self.bot, message, guild_channels
             )
-
-            # Try to fetch Reddit clip for all sent messages
-            if self.reddit_client and self.config.get("live_monitoring", {}).get(
-                "notifications", {}
-            ).get("include_reddit_clips", True):
-                asyncio.create_task(
-                    self._add_reddit_clips_to_all_channels(
-                        guild_channels,
-                        home_team,
-                        away_team,
-                        goal_event.minute,
-                        match.start_time,
-                        scoring_team,
-                        home_goals,
-                        away_goals,
-                    )
-                )
 
         return sent_messages
 
@@ -788,107 +768,6 @@ class MatchNotifier:
         guild_channels = self._get_live_channels()
         if guild_channels:
             await send_to_guild_channels(self.bot, message, guild_channels)
-
-    async def _add_reddit_clip(
-        self,
-        message,
-        home_team,
-        away_team,
-        minute,
-        match_time,
-        scoring_team,
-        home_score,
-        away_score,
-    ):
-        """Try to add Reddit clip link to goal notification."""
-        try:
-            result = await asyncio.wait_for(
-                self.reddit_client.search_goal(
-                    home_team=home_team,
-                    away_team=away_team,
-                    minute=minute,
-                    match_time=match_time,
-                    scoring_team=scoring_team,
-                    home_score=home_score,
-                    away_score=away_score,
-                ),
-                timeout=5.0,
-            )
-
-            if result:
-                # Edit message to add clip link
-                new_content = message.content + f"\n\n🎥 [Replay]({result['post_url']})"
-                await message.edit(content=new_content)
-
-        except TimeoutError:
-            logger.debug(f"Reddit search timed out for goal at {minute}'")
-        except Exception as e:
-            logger.error(f"Failed to add Reddit clip: {e}")
-
-    async def _add_reddit_clips_to_all_channels(
-        self,
-        guild_channels,
-        home_team,
-        away_team,
-        minute,
-        match_time,
-        scoring_team,
-        home_score,
-        away_score,
-    ):
-        """Try to add Reddit clip links to goal notifications across all channels."""
-        try:
-            # Fetch the clip once
-            result = await asyncio.wait_for(
-                self.reddit_client.search_goal(
-                    home_team=home_team,
-                    away_team=away_team,
-                    minute=minute,
-                    match_time=match_time,
-                    scoring_team=scoring_team,
-                    home_score=home_score,
-                    away_score=away_score,
-                ),
-                timeout=5.0,
-            )
-
-            if result:
-                # Edit last message in each channel to add clip link
-                for guild_id, channel_name in guild_channels:
-                    try:
-                        guild = self.bot.get_guild(int(guild_id))
-                        if not guild:
-                            continue
-
-                        import discord
-
-                        channel = discord.utils.get(
-                            guild.text_channels, name=channel_name
-                        )
-                        if not channel:
-                            continue
-
-                        # Get the last message sent by the bot
-                        async for message in channel.history(limit=10):
-                            if (
-                                message.author == self.bot.user
-                                and "⚽ **GOAL!**" in message.content
-                            ):
-                                new_content = (
-                                    message.content
-                                    + f"\n\n🎥 [Replay]({result['post_url']})"
-                                )
-                                await message.edit(content=new_content)
-                                break
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to add clip to channel {channel_name}: {e}"
-                        )
-
-        except TimeoutError:
-            logger.debug(f"Reddit search timed out for goal at {minute}'")
-        except Exception as e:
-            logger.error(f"Failed to fetch Reddit clip: {e}")
 
     async def notify_card(self, channel, details, card_event):
         """

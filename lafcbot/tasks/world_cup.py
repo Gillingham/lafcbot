@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 from discord.ext import tasks
 
-from lafcbot.clients import reddit_client
 from lafcbot.match_events.detectors import (
     get_var_decision_keys,
     get_var_decision_type,
@@ -60,13 +59,6 @@ class WorldCupTask:
         self.scheduler_task = None
         self.game_monitor_task = None
 
-        highlights_config = self.config.get("highlights", {})
-        use_playwright = highlights_config.get("use_playwright", True)
-        cache_path = highlights_config.get("cache_path")
-        self.reddit_client = reddit_client.RedditGoalFetcher(
-            cache_path=cache_path, use_playwright=use_playwright
-        )
-
         # Load timezone
         tz_name = self.config.get("timezone", "America/Los_Angeles")
         self.timezone = ZoneInfo(tz_name)
@@ -86,7 +78,6 @@ class WorldCupTask:
             self.bot,
             self.config,
             self.timezone,
-            self.reddit_client,
             server_configs=self.server_configs,
         )
 
@@ -173,9 +164,6 @@ class WorldCupTask:
         if self.game_monitor_task and self.game_monitor_task.is_running():
             self.game_monitor_task.cancel()
             print("World Cup game monitor stopped")
-
-        # Close Reddit client
-        asyncio.create_task(self.reddit_client.close())
 
     def _create_daily_task(self):
         """Create and return the daily task loop."""
