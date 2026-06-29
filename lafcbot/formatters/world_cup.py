@@ -141,7 +141,7 @@ class WorldCupFormatter(BaseFormatter):
         if match.page_slug:
             try:
                 details = await fotmob_client.get_match_details(
-                    page_slug=match.page_slug
+                    page_slug=match.page_slug, force_refresh=True
                 )
                 if details:
                     if details.match.venue:
@@ -156,35 +156,65 @@ class WorldCupFormatter(BaseFormatter):
                 # Fall back to simple formatting on API error
                 details = None
 
+        # Use detailed match info if available (has more up-to-date status)
+        match_to_display = details.match if details else match
+
         # Format match line
-        home_name = match.home_team.name
-        away_name = match.away_team.name
+        home_name = match_to_display.home_team.name
+        away_name = match_to_display.away_team.name
 
         home_display = self.format_team_with_flag_and_rank(home_name)
         away_display = self.format_team_with_flag_and_rank(away_name)
 
         # Format score or status
-        if match.is_live:
-            time_display = match.match_time_display or "LIVE"
-            score_part = f"{match.home_score}-{match.away_score} ({time_display})"
+        if match_to_display.is_live:
+            time_display = match_to_display.match_time_display or "LIVE"
+            score_part = f"{match_to_display.home_score}-{match_to_display.away_score} ({time_display})"
             match_line = f"{home_display} vs {away_display} - {score_part}"
-        elif match.is_finished:
-            score_part = f"{match.home_score}-{match.away_score} (FT)"
+        elif match_to_display.is_finished:
+            score_part = (
+                f"{match_to_display.home_score}-{match_to_display.away_score} (FT)"
+            )
+
+            # Determine winner (check penalties first if scores are tied)
+            home_won = False
+            away_won = False
+            if details and details.penalties:
+                pen_score = (
+                    f"{details.penalties.home_score}-{details.penalties.away_score}"
+                )
+                score_part += f" ({pen_score} pens)"
+                home_won = details.penalties.home_score > details.penalties.away_score
+                away_won = details.penalties.away_score > details.penalties.home_score
+            else:
+                # Regular time winner
+                home_won = match_to_display.home_score > match_to_display.away_score
+                away_won = match_to_display.away_score > match_to_display.home_score
+
+            # Bold the winner's name
+            if home_won:
+                home_display = f"**{home_display}**"
+            elif away_won:
+                away_display = f"**{away_display}**"
+
             match_line = f"{home_display} vs {away_display} - {score_part}"
-        elif match.start_time:
-            match_time = match.start_time.astimezone(self.timezone)
+        elif match_to_display.start_time:
+            match_time = match_to_display.start_time.astimezone(self.timezone)
             time_str = match_time.strftime("%b %d, %I:%M %p PT")
             match_line = f"{home_display} vs {away_display} - {time_str}"
         else:
             match_line = f"{home_display} vs {away_display}"
 
-        # Format venue and broadcast lines
-        venue_line = self.format_venue_info(venue_info) if venue_info else None
-        broadcast_line = (
-            self.format_broadcast_channels(details.broadcast_channels)
-            if details and us_broadcast_channels
-            else None
-        )
+        # Format venue and broadcast lines (only for upcoming/live matches)
+        venue_line = None
+        broadcast_line = None
+        if not match_to_display.is_finished:
+            venue_line = self.format_venue_info(venue_info) if venue_info else None
+            broadcast_line = (
+                self.format_broadcast_channels(details.broadcast_channels)
+                if details and us_broadcast_channels
+                else None
+            )
 
         return FormattedMatch(
             match_line=match_line,

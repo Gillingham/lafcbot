@@ -539,8 +539,10 @@ class FotMobClient:
                             )
                         return details
                     except Exception as e:
+                        import traceback
+
                         logger.error(
-                            f"Failed to parse match details from page_slug: {e}"
+                            f"Failed to parse match details from page_slug: {e}\n{traceback.format_exc()}"
                         )
 
         # If we have a match_id, try common match page paths first when no page slug is available
@@ -575,8 +577,10 @@ class FotMobClient:
                             )
                         return details
                     except Exception as e:
+                        import traceback
+
                         logger.error(
-                            f"Failed to parse match details from page {path}: {e}"
+                            f"Failed to parse match details from page {path}: {e}\n{traceback.format_exc()}"
                         )
 
         # Last resort: try API endpoints (legacy behavior)
@@ -932,7 +936,7 @@ class FotMobClient:
 
         events = []
         events_obj = data.get("content", {}).get("matchFacts", {}).get("events") or {}
-        for event_data in events_obj.get("events", []):
+        for event_data in events_obj.get("events") or []:
             # Extract assist for goals
             assist_name = None
             if event_data.get("type") == "Goal":
@@ -1090,7 +1094,7 @@ class FotMobClient:
         # Also use this to get final penalty score if shootoutDetails is not populated
         penalty_kicks = []
         events_obj = data.get("content", {}).get("matchFacts", {}).get("events") or {}
-        pen_events = events_obj.get("penaltyShootoutEvents", [])
+        pen_events = events_obj.get("penaltyShootoutEvents") or []
         for pen_event in pen_events:
             if not isinstance(pen_event, dict):
                 continue
@@ -1128,12 +1132,19 @@ class FotMobClient:
 
         # Fallback: if shootoutDetails is not populated but we have penalty kicks,
         # use the final score from the last penalty kick
-        if not penalties and penalty_kicks and status == "finished":
+        if not penalties and penalty_kicks:
             last_pk = penalty_kicks[-1]
             penalties = PenaltyShootout(
                 home_score=last_pk.home_shootout_score,
                 away_score=last_pk.away_shootout_score,
             )
+
+        # If penalties are complete (we have a final shootout score), mark match as finished
+        # This handles cases where FotMob hasn't updated general.finished yet
+        if penalties and status == "live":
+            # Check if one team has won the shootout (scores are different)
+            if penalties.home_score != penalties.away_score:
+                match.status = "finished"
 
         return MatchDetails(
             match=match,
