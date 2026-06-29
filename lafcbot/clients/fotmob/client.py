@@ -931,12 +931,8 @@ class FotMobClient:
         )
 
         events = []
-        for event_data in (
-            data.get("content", {})
-            .get("matchFacts", {})
-            .get("events", {})
-            .get("events", [])
-        ):
+        events_obj = data.get("content", {}).get("matchFacts", {}).get("events") or {}
+        for event_data in events_obj.get("events", []):
             # Extract assist for goals
             assist_name = None
             if event_data.get("type") == "Goal":
@@ -1093,12 +1089,8 @@ class FotMobClient:
         # Parse individual penalty kicks
         # Also use this to get final penalty score if shootoutDetails is not populated
         penalty_kicks = []
-        pen_events = (
-            data.get("content", {})
-            .get("matchFacts", {})
-            .get("events", {})
-            .get("penaltyShootoutEvents", [])
-        )
+        events_obj = data.get("content", {}).get("matchFacts", {}).get("events") or {}
+        pen_events = events_obj.get("penaltyShootoutEvents", [])
         for pen_event in pen_events:
             if not isinstance(pen_event, dict):
                 continue
