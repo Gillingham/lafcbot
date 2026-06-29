@@ -955,7 +955,7 @@ class FotMobClient:
             player_in = None
             player_out = None
 
-            card_field = event_data.get("card") or event_data.get("Card")
+            card_field = event_data.get("card")
             card_color_val = None
             if card_field:
                 try:
@@ -963,7 +963,7 @@ class FotMobClient:
                 except Exception:
                     card_color_val = None
 
-            swap = event_data.get("swap") or event_data.get("Swap")
+            swap = event_data.get("swap")
             is_substitution = (
                 swap and isinstance(swap, list) and len(swap) >= 2
             ) or raw_type_lower in ("substitution", "sub")
@@ -1005,9 +1005,7 @@ class FotMobClient:
             else:
                 event_type = raw_type
 
-            own_goal_flag = event_data.get("isOwnGoal")
-            if own_goal_flag is None:
-                own_goal_flag = event_data.get("ownGoal", False)
+            own_goal_flag = event_data.get("ownGoal", False)
 
             # Determine team_id - if teamId is null/0, use isHome to infer it
             team_id = event_data.get("teamId")
@@ -1079,20 +1077,9 @@ class FotMobClient:
                     if first_extra:
                         extra_time = True
 
-        # Parse penalty shootout final result
-        penalties = None
-        penalty_data = data.get("content", {}).get("shootoutDetails")
-        if penalty_data and isinstance(penalty_data, dict):
-            home_pen_score = penalty_data.get("homeScore")
-            away_pen_score = penalty_data.get("awayScore")
-            if home_pen_score is not None and away_pen_score is not None:
-                penalties = PenaltyShootout(
-                    home_score=home_pen_score, away_score=away_pen_score
-                )
-
-        # Parse individual penalty kicks
-        # Also use this to get final penalty score if shootoutDetails is not populated
+        # Parse individual penalty kicks from penaltyShootoutEvents
         penalty_kicks = []
+        penalties = None
         events_obj = data.get("content", {}).get("matchFacts", {}).get("events") or {}
         pen_events = events_obj.get("penaltyShootoutEvents") or []
         for pen_event in pen_events:
@@ -1130,9 +1117,8 @@ class FotMobClient:
                 )
             )
 
-        # Fallback: if shootoutDetails is not populated but we have penalty kicks,
-        # use the final score from the last penalty kick
-        if not penalties and penalty_kicks:
+        # Get final penalty score from the last penalty kick
+        if penalty_kicks:
             last_pk = penalty_kicks[-1]
             penalties = PenaltyShootout(
                 home_score=last_pk.home_shootout_score,
