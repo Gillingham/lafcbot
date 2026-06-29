@@ -1061,9 +1061,22 @@ class FotMobClient:
                 )
 
         # Check for extra time
+        # FotMob sets extraTime/hasExtraTime only after extra time completes.
+        # During extra time, check if firstExtraHalfStarted is set in header.status.halfs
         extra_time = general.get("extraTime", False) or general.get(
             "hasExtraTime", False
         )
+
+        # Also check if currently in extra time (live match with firstExtraHalfStarted set)
+        if not extra_time and status == "live":
+            header = data.get("header", {})
+            status_obj = header.get("status", {})
+            if isinstance(status_obj, dict):
+                halfs = status_obj.get("halfs", {})
+                if isinstance(halfs, dict):
+                    first_extra = halfs.get("firstExtraHalfStarted", "")
+                    if first_extra:
+                        extra_time = True
 
         # Parse penalty shootout
         penalties = None

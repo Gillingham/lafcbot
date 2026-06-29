@@ -859,6 +859,13 @@ class MatchNotifier:
         # Get the half type from the event (HT or FT)
         half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
 
+        # Don't send FT notification if match is still live (going to extra time)
+        if half_type == "FT" and match.is_live:
+            logger.info(
+                f"Skipping FT notification for {home_team} vs {away_team} - match is still live (going to extra time)"
+            )
+            return
+
         home_display, away_display = self._get_team_displays(match)
         home_goals, away_goals = self._get_scores(match)
 
