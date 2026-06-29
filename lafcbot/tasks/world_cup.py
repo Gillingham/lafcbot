@@ -604,6 +604,11 @@ class WorldCupTask:
                     }
                     for e in details.events
                 ]
+                # Initialize penalty kicks tracking
+                initial_penalty_ids = set()
+                if details.penalty_kicks:
+                    initial_penalty_ids = {pk.id for pk in details.penalty_kicks}
+
                 self.monitored_matches[match_id] = {
                     "last_events": initial_events,
                     "last_home_score": match.home_score or 0,
@@ -615,6 +620,7 @@ class WorldCupTask:
                     "initialized_at": datetime.now(self.timezone),
                     "page_slug": match.page_slug,
                     "goal_messages": {},  # Maps event_id to list of Discord message objects
+                    "notified_penalty_kicks": initial_penalty_ids,  # Track notified penalty kick IDs
                 }
                 if initial_events:
                     logger.info(
@@ -658,6 +664,9 @@ class WorldCupTask:
 
             # Check for penalties
             await self._check_penalties(details, state, channel)
+
+            # Check for penalty kicks during shootout
+            await self._check_penalty_kicks(details, state, channel)
 
             # Update state
             state["last_events"] = [
@@ -955,9 +964,49 @@ class WorldCupTask:
         if not notifications_config.get("penalties", True):
             return
 
-        if details.penalties and not state["penalties_sent"]:
+        # Check if penalties have started
+        # FotMob shows "Pen" or "Penalties" in match_time_display when shootout begins
+        # The penalties object only gets populated once scoring starts
+        penalties_started = False
+        if details.penalties:
+            # Penalty shootout has scores
+            penalties_started = True
+        elif details.match.match_time_display:
+            # Check if time display indicates penalties (before any shots taken)
+            time_display = details.match.match_time_display.strip().lower()
+            penalties_started = time_display in ("pen", "penalties")
+
+        if penalties_started and not state["penalties_sent"]:
             await self.notifier.notify_penalties(channel, details)
             state["penalties_sent"] = True
+
+    async def _check_penalty_kicks(self, details, state, channel):
+        """Check for new penalty kicks during shootout and send notifications."""
+        notifications_config = self.config.get("live_monitoring", {}).get(
+            "notifications", {}
+        )
+        if not notifications_config.get("penalty_kicks", True):
+            return
+
+        # Only check if penalty kicks data is available
+        if not details.penalty_kicks:
+            return
+
+        # Get set of already notified penalty kick IDs
+        notified_pks = state.get("notified_penalty_kicks", set())
+
+        # Find new penalty kicks
+        new_penalty_kicks = [
+            pk for pk in details.penalty_kicks if pk.id not in notified_pks
+        ]
+
+        # Send notifications for new penalty kicks
+        for pk in new_penalty_kicks:
+            await self.notifier.notify_penalty_kick(channel, details, pk)
+            notified_pks.add(pk.id)
+
+        # Update state
+        state["notified_penalty_kicks"] = notified_pks
 
     async def _check_finished_matches(self):
         """Check for matches that finished and send post-match summaries."""

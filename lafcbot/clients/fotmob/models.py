@@ -112,6 +112,19 @@ class PenaltyShootout:
 
 
 @dataclass
+class PenaltyKick:
+    """Represents an individual penalty kick in a shootout."""
+
+    id: int  # Event ID
+    player_name: str
+    team_id: int
+    is_home: bool
+    scored: bool  # True if goal, False if missed
+    home_shootout_score: int  # Shootout score after this kick
+    away_shootout_score: int  # Shootout score after this kick
+
+
+@dataclass
 class MatchDetails:
     """Represents detailed match information including events and stats."""
 
@@ -122,7 +135,8 @@ class MatchDetails:
     broadcast_channels: list[BroadcastChannel] | None = None
     highlight: Highlight | None = None  # Official match highlights
     extra_time: bool = False  # Whether match went to extra time
-    penalties: PenaltyShootout | None = None  # Penalty shootout result
+    penalties: PenaltyShootout | None = None  # Penalty shootout final result
+    penalty_kicks: list[PenaltyKick] = None  # Individual penalty kicks during shootout
 
 
 @dataclass

@@ -970,6 +970,58 @@ class MatchNotifier:
             )
             await send_to_guild_channels(self.bot, message, guild_channels)
 
+    async def notify_penalty_kick(self, channel, details, penalty_kick):
+        """
+        Send a penalty kick notification (scored or missed).
+
+        Args:
+            channel: Discord channel to send to (unused in multi-server mode)
+            details: MatchDetails object
+            penalty_kick: PenaltyKick object
+        """
+        match = details.match
+        home_team = match.home_team.name
+        away_team = match.away_team.name
+        home_flag = get_country_flag(home_team)
+        away_flag = get_country_flag(away_team)
+
+        # Determine which team took the kick
+        if penalty_kick.is_home:
+            team_name = home_team
+            team_flag = home_flag
+        else:
+            team_name = away_team
+            team_flag = away_flag
+
+        team_display = f"{team_flag} {team_name}" if team_flag else team_name
+
+        # Build message based on result
+        if penalty_kick.scored:
+            emoji = "⚽"
+            result = "**GOAL!**"
+        else:
+            emoji = "❌"
+            result = "**MISSED!**"
+
+        # Show running shootout score
+        score_display = (
+            f"({penalty_kick.home_shootout_score}-{penalty_kick.away_shootout_score})"
+        )
+
+        message = (
+            f"{emoji} **PENALTY KICK {result}**\n\n"
+            f"{penalty_kick.player_name} ({team_display})\n"
+            f"Shootout Score: {score_display}"
+        )
+
+        # Send to all configured live channels
+        guild_channels = self._get_live_channels()
+        if guild_channels:
+            logger.info(
+                f"Sending penalty kick notification ({result}) to {len(guild_channels)} channel(s)"
+            )
+            await send_to_guild_channels(self.bot, message, guild_channels)
+
     async def notify_match_summary(self, details, stale_threshold, was_monitored=False):
         """
         Send post-match summary with highlights and goal clips.

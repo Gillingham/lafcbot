@@ -27,6 +27,7 @@ from .models import (
     Match,
     MatchDetails,
     MatchEvent,
+    PenaltyKick,
     PenaltyShootout,
     PlayerStat,
     Team,
@@ -1078,7 +1079,7 @@ class FotMobClient:
                     if first_extra:
                         extra_time = True
 
-        # Parse penalty shootout
+        # Parse penalty shootout final result
         penalties = None
         penalty_data = data.get("content", {}).get("shootoutDetails")
         if penalty_data and isinstance(penalty_data, dict):
@@ -1089,6 +1090,49 @@ class FotMobClient:
                     home_score=home_pen_score, away_score=away_pen_score
                 )
 
+        # Parse individual penalty kicks
+        penalty_kicks = []
+        pen_events = (
+            data.get("content", {})
+            .get("matchFacts", {})
+            .get("events", {})
+            .get("penaltyShootoutEvents", [])
+        )
+        for pen_event in pen_events:
+            if not isinstance(pen_event, dict):
+                continue
+
+            event_id = pen_event.get("eventId")
+            if not event_id:
+                continue
+
+            player = pen_event.get("player", {})
+            player_name = player.get("name") if isinstance(player, dict) else None
+            if not player_name:
+                player_name = pen_event.get("nameStr", "Unknown")
+
+            pen_score = pen_event.get("penShootoutScore")
+            if not pen_score or not isinstance(pen_score, list) or len(pen_score) < 2:
+                continue
+
+            # Determine if scored or missed
+            event_type = pen_event.get("type", "")
+            scored = event_type == "Goal"
+
+            penalty_kicks.append(
+                PenaltyKick(
+                    id=event_id,
+                    player_name=player_name,
+                    team_id=pen_event.get("player", {}).get("id", 0)
+                    if isinstance(pen_event.get("player"), dict)
+                    else 0,
+                    is_home=pen_event.get("isHome", False),
+                    scored=scored,
+                    home_shootout_score=pen_score[0],
+                    away_shootout_score=pen_score[1],
+                )
+            )
+
         return MatchDetails(
             match=match,
             events=events,
@@ -1098,6 +1142,7 @@ class FotMobClient:
             highlight=highlight,
             extra_time=extra_time,
             penalties=penalties,
+            penalty_kicks=penalty_kicks if penalty_kicks else None,
         )
 
     def _parse_match_details_from_page(
