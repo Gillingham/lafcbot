@@ -859,12 +859,21 @@ class MatchNotifier:
         # Get the half type from the event (HT or FT)
         half_type = half_event.half_type or ("FT" if half_event.minute >= 90 else "HT")
 
-        # Don't send FT notification if match is still live (going to extra time)
-        if half_type == "FT" and match.is_live:
-            logger.info(
-                f"Skipping FT notification for {home_team} vs {away_team} - match is still live (going to extra time)"
-            )
-            return
+        # Don't send FT/AET notification if:
+        # 1. Match is still live (going to extra time), OR
+        # 2. Match went to penalties (penalties object exists)
+        # The match summary will include the penalty result instead
+        if half_type in ("FT", "AET"):
+            if match.is_live:
+                logger.info(
+                    f"Skipping {half_type} notification for {home_team} vs {away_team} - match is still live"
+                )
+                return
+            if details.penalties:
+                logger.info(
+                    f"Skipping {half_type} notification for {home_team} vs {away_team} - match went to penalties (summary will include penalty result)"
+                )
+                return
 
         home_display, away_display = self._get_team_displays(match)
         home_goals, away_goals = self._get_scores(match)
@@ -1080,8 +1089,26 @@ class MatchNotifier:
 
         # Add penalty result if applicable
         if details.penalties:
+            pen_home = details.penalties.home_score
+            pen_away = details.penalties.away_score
+
+            # Determine winner
+            if pen_home > pen_away:
+                winner_display = (
+                    f"{home_flag} **{home_team} wins on penalties!**"
+                    if home_flag
+                    else f"**{home_team} wins on penalties!**"
+                )
+            else:
+                winner_display = (
+                    f"{away_flag} **{away_team} wins on penalties!**"
+                    if away_flag
+                    else f"**{away_team} wins on penalties!**"
+                )
+
             lines.append(
-                f"**Penalties:** {home_team} {details.penalties.home_score}-{details.penalties.away_score} {away_team}\n"
+                f"**Penalties:** {home_team} {pen_home}-{pen_away} {away_team}\n"
+                f"{winner_display}\n"
             )
 
         # Add goals

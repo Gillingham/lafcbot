@@ -1091,6 +1091,7 @@ class FotMobClient:
                 )
 
         # Parse individual penalty kicks
+        # Also use this to get final penalty score if shootoutDetails is not populated
         penalty_kicks = []
         pen_events = (
             data.get("content", {})
@@ -1131,6 +1132,15 @@ class FotMobClient:
                     home_shootout_score=pen_score[0],
                     away_shootout_score=pen_score[1],
                 )
+            )
+
+        # Fallback: if shootoutDetails is not populated but we have penalty kicks,
+        # use the final score from the last penalty kick
+        if not penalties and penalty_kicks and status == "finished":
+            last_pk = penalty_kicks[-1]
+            penalties = PenaltyShootout(
+                home_score=last_pk.home_shootout_score,
+                away_score=last_pk.away_shootout_score,
             )
 
         return MatchDetails(
