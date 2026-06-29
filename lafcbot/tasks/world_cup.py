@@ -718,12 +718,16 @@ class WorldCupTask:
         truly_new_goals = [g for g in new_goals if g.id not in old_goal_ids]
         scorer_updates = [g for g in new_goals if g.id in old_goal_ids]
 
-        # For VAR events, use only event ID since they're distinct events
-        old_event_ids = {e["id"] for e in state["last_events"]}
+        # For VAR events, track both event ID and type
+        # This handles the case where FotMob replaces a Goal event with a VAR event
+        # using the same ID (e.g., goal at minute 102 becomes VAR cancellation with same ID)
+        old_event_keys = {(e["id"], e["type"]) for e in state["last_events"]}
 
-        # Find all new VAR events
+        # Find all new VAR events (new ID, OR same ID but different type)
         new_var_events = [
-            e for e in details.events if e.id not in old_event_ids and is_var_event(e)
+            e
+            for e in details.events
+            if is_var_event(e) and (e.id, e.type) not in old_event_keys
         ]
 
         # Since we now initialize last_events with all existing events when monitoring starts,
