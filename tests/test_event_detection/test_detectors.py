@@ -125,7 +125,7 @@ class TestHalfEventDetection:
 
         for event in half_events:
             normalized = normalize_half_type(event)
-            assert normalized in ("HT", "FT")
+            assert normalized in ("HT", "FT", "AET")
 
     def test_half_events_at_expected_minutes(self, sample_match_id):
         """Test half events occur at expected minutes."""

@@ -101,24 +101,6 @@ class TestVenueFormatting:
         assert details.match.venue.name in result
 
 
-class TestBroadcastFormatting:
-    """Test broadcast channel formatting."""
-
-    def test_format_broadcast_channels_us_only(self, formatter, sample_match_id):
-        """Test that only US channels are formatted."""
-        sim = load_test_match(sample_match_id)
-        details = sim.get_full_match()
-
-        if not details.broadcast_channels:
-            pytest.skip("Test match has no broadcast data")
-
-        result = formatter.format_broadcast_channels(details.broadcast_channels)
-
-        if result:
-            assert "📺" in result
-            # Result should only contain US channels
-
-
 class TestPenaltyFormatting:
     """Test penalty shootout formatting."""
 

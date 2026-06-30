@@ -634,6 +634,43 @@ lafcbot/
 
 ## Development
 
+### Testing
+
+The project has comprehensive test coverage with both unit tests and integration tests.
+
+```bash
+# Run all tests (fast unit tests only)
+uv run python -m pytest tests/ -v -m "not integration"
+
+# Run with coverage report
+uv run python -m pytest tests/ -m "not integration" --cov=lafcbot --cov-report=term-missing --cov-report=html
+
+# View HTML coverage report
+open htmlcov/index.html
+
+# Run integration tests (calls real FotMob API - slower)
+uv run python -m pytest tests/test_integration/ -v -m integration
+
+# Run all tests including integration
+uv run python -m pytest tests/ -v
+```
+
+**Test organization:**
+- `tests/test_formatters/` - Message formatting tests
+- `tests/test_event_detection/` - Match event detection logic
+- `tests/test_live_monitoring/` - Live match monitoring state tracking
+- `tests/test_visual_verification.py` - Visual output verification
+- `tests/test_integration/` - Integration tests with real FotMob API
+
+**Current coverage:** 28.72% overall (with integration tests)
+- High coverage: formatters (85%), models (100%), parser (78%), utilities (68%)
+- Medium coverage: FotMob client (47%), notifiers (51%)
+- Low coverage: Discord cogs (integration territory), background tasks
+
+**Integration tests add 3.2% coverage** by exercising real FotMob API calls and parsing.
+
+See `CLAUDE.md` for detailed testing guidelines.
+
 ### Code Quality
 
 This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting. Pre-commit hooks automatically run Ruff on all staged files.

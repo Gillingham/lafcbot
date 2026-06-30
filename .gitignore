@@ -8,3 +8,10 @@ lafcbot.egg-info/
 reddit_cache.json
 lafcbot.db
 test_data/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
