@@ -350,7 +350,29 @@ class WorldCupTask:
                 return
 
             # Separate matches by status
-            live_matches = [m for m in all_matches if m.is_live]
+            # For live matches, only include those that started recently (within last 4 hours)
+            # to avoid monitoring matches from yesterday that are incorrectly marked as live
+            now = datetime.now(self.timezone)
+            live_matches = []
+            for m in all_matches:
+                if m.is_live:
+                    # Check if match started within last 4 hours
+                    if m.start_time:
+                        start_time_local = m.start_time.astimezone(self.timezone)
+                        hours_since_start = (
+                            now - start_time_local
+                        ).total_seconds() / 3600
+                        if hours_since_start <= 4:
+                            live_matches.append(m)
+                        else:
+                            logger.debug(
+                                f"Skipping 'live' match {m.home_team.name} vs {m.away_team.name} "
+                                f"that started {hours_since_start:.1f} hours ago (likely stale)"
+                            )
+                    else:
+                        # No start time - include it as a fallback
+                        live_matches.append(m)
+
             upcoming_matches = [
                 m
                 for m in all_matches

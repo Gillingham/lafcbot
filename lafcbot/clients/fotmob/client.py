@@ -778,10 +778,20 @@ class FotMobClient:
             short_status = status_obj["reason"].get("short", "")
 
             # Determine match state
-            if short_status.lower() in ("ft", "fulltime", "finished"):
+            if short_status.lower() in (
+                "ft",
+                "fulltime",
+                "finished",
+                "pen",
+                "penalties",
+            ):
                 status = "finished"
                 if not match_time_display:
-                    match_time_display = "FT"
+                    match_time_display = (
+                        "FT"
+                        if short_status.lower() not in ("pen", "penalties")
+                        else "Pen"
+                    )
             elif short_status.lower() in ("ht", "halftime"):
                 status = "live"
                 # Only use "HT" if we don't have an actual minute
