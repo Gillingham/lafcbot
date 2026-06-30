@@ -364,7 +364,7 @@ class MatchNotifier:
         goal_emoji = "🥅" if is_penalty else "⚽"
         goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
 
-        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id
@@ -433,7 +433,7 @@ class MatchNotifier:
         goal_emoji = "🥅" if is_penalty else "⚽"
         goal_type = "PENALTY GOAL!" if is_penalty else "GOAL!"
 
-        message = f"{goal_emoji} **{goal_type}** {score_line}\n\n"
+        message = f"{goal_emoji} **{goal_type}** {score_line}\n"
 
         # Get team display for the scoring team (with flag)
         is_home_scorer = goal_event.team_id == match.home_team.id

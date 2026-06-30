@@ -90,6 +90,15 @@ class MockGuild:
     id: int
     channels: dict[str, MockChannel] = field(default_factory=dict)
 
+    @property
+    def text_channels(self) -> list[MockChannel]:
+        """Get all text channels.
+
+        Returns:
+            List of all MockChannel objects
+        """
+        return list(self.channels.values())
+
     def get_channel_by_name(self, channel_name: str) -> MockChannel | None:
         """Get channel by name.
 
