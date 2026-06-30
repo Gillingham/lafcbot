@@ -88,28 +88,21 @@ class WorldCupFormatter(BaseFormatter):
         away_kicks_display = []
 
         # Get actual kicks taken
-        for i, pk in enumerate(penalty_kicks):
-            # Determine kick number (1-indexed)
-            if pk.is_home:
-                kick_num = len([k for k in penalty_kicks[: i + 1] if k.is_home])
-            else:
-                kick_num = len([k for k in penalty_kicks[: i + 1] if not k.is_home])
-
-            emoji = "✅" if pk.scored else "❌"
-            kick_display = f"{emoji}{kick_num}"
+        for pk in penalty_kicks:
+            emoji = "🟩" if pk.scored else "🟥"
 
             if pk.is_home:
-                home_kicks_display.append(kick_display)
+                home_kicks_display.append(emoji)
             else:
-                away_kicks_display.append(kick_display)
+                away_kicks_display.append(emoji)
 
         # Add blank squares for upcoming kicks (only in rounds 1-5 if live)
         if is_live and not is_sudden_death:
             # Fill up to 5 kicks for each team
-            for i in range(home_count, 5):
-                home_kicks_display.append(f"⬜{i + 1}")
-            for i in range(away_count, 5):
-                away_kicks_display.append(f"⬜{i + 1}")
+            for _ in range(home_count, 5):
+                home_kicks_display.append("⬜")
+            for _ in range(away_count, 5):
+                away_kicks_display.append("⬜")
 
         # Get country flags
         home_flag = get_country_flag(home_team_name)
