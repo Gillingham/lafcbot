@@ -5,3 +5,19 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.0
+    hooks:
+      - id: mypy
+        files: ^lafcbot/
+        additional_dependencies: [types-Pillow]
+        args: [--config-file=mypy.ini]
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: uv run python -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+        args: [tests/, -v, -m, "not integration"]
