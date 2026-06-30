@@ -529,15 +529,17 @@ class FotMobClient:
                             logger.error(f"Failed to dump match JSON: {e}")
                     broadcast_channels_data = extract_broadcast_channels(html)
                     try:
-                        details = self._parse_match_details_from_page(
-                            page_props, broadcast_channels_data
+                        match_details: MatchDetails | None = (
+                            self._parse_match_details_from_page(
+                                page_props, broadcast_channels_data
+                            )
                         )
-                        if details and match_id:
+                        if match_details and match_id:
                             self._match_details_cache[match_id] = (
                                 asyncio.get_event_loop().time(),
-                                details,
+                                match_details,
                             )
-                        return details
+                        return match_details
                     except Exception as e:
                         import traceback
 
@@ -567,15 +569,17 @@ class FotMobClient:
                         # Store the successful path for future use to avoid discovery loop
                         if match_id:
                             self._page_slugs[match_id] = path
-                        details = self._parse_match_details_from_page(
-                            page_props, broadcast_channels_data
+                        fallback_details: MatchDetails | None = (
+                            self._parse_match_details_from_page(
+                                page_props, broadcast_channels_data
+                            )
                         )
-                        if details and match_id:
+                        if fallback_details and match_id:
                             self._match_details_cache[match_id] = (
                                 asyncio.get_event_loop().time(),
-                                details,
+                                fallback_details,
                             )
-                        return details
+                        return fallback_details
                     except Exception as e:
                         import traceback
 
@@ -1144,7 +1148,7 @@ class FotMobClient:
             highlight=highlight,
             extra_time=extra_time,
             penalties=penalties,
-            penalty_kicks=penalty_kicks if penalty_kicks else None,
+            penalty_kicks=penalty_kicks or None,
         )
 
     def _parse_match_details_from_page(

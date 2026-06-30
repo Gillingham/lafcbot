@@ -22,7 +22,7 @@ class MockMessage:
     embeds: list = field(default_factory=list)
     edit_history: list[str] = field(default_factory=list)
 
-    async def edit(self, content: str = None, **kwargs):
+    async def edit(self, content: str | None = None, **kwargs):
         """Mock message edit.
 
         Args:
@@ -47,7 +47,7 @@ class MockChannel:
     sent_messages: list[MockMessage] = field(default_factory=list)
     _message_id_counter: int = 1
 
-    async def send(self, content: str = None, **kwargs) -> MockMessage:
+    async def send(self, content: str | None = None, **kwargs) -> MockMessage:
         """Mock channel send.
 
         Args:
@@ -192,7 +192,7 @@ class MockBot:
 def create_test_bot_with_channels(
     guild_id: int = 123456789,
     guild_name: str = "Test Server",
-    channel_names: list[str] = None,
+    channel_names: list[str] | None = None,
 ) -> tuple[MockBot, MockGuild, dict[str, MockChannel]]:
     """Create a mock bot with guild and channels for testing.
 

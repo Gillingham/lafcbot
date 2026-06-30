@@ -5,8 +5,6 @@ async methods compatible with the real FotMobClient interface. This allows
 testing live monitoring logic without actual HTTP requests.
 """
 
-from types import SimpleNamespace
-
 from lafcbot.clients.fotmob.models import Match, MatchDetails
 
 from .fotmob_simulator import FotMobSimulator
@@ -103,21 +101,8 @@ class MockFotMobClient:
         details = self.simulator.get_match_at_minute(self.current_minute)
 
         if details.match.is_live:
-            # Return a minimal Match object
-            return [
-                SimpleNamespace(
-                    id=details.match.id,
-                    home_team=details.match.home_team,
-                    away_team=details.match.away_team,
-                    home_score=details.match.home_score,
-                    away_score=details.match.away_score,
-                    status=details.match.status,
-                    start_time=details.match.start_time,
-                    is_live=details.match.is_live,
-                    is_finished=details.match.is_finished,
-                    page_slug=details.match.page_slug,
-                )
-            ]
+            # Return the Match object from details
+            return [details.match]
         else:
             return []
 
@@ -129,18 +114,5 @@ class MockFotMobClient:
         """
         details = self.simulator.get_match_at_minute(self.current_minute)
 
-        # Return a minimal Match object
-        return [
-            SimpleNamespace(
-                id=details.match.id,
-                home_team=details.match.home_team,
-                away_team=details.match.away_team,
-                home_score=details.match.home_score,
-                away_score=details.match.away_score,
-                status=details.match.status,
-                start_time=details.match.start_time,
-                is_live=details.match.is_live,
-                is_finished=details.match.is_finished,
-                page_slug=details.match.page_slug,
-            )
-        ]
+        # Return the Match object from details
+        return [details.match]

@@ -339,6 +339,9 @@ class OpenMeteoClient:
             query: Location query string
             state_filter: Optional state name to filter results
         """
+        if not self._session:
+            self._session = aiohttp.ClientSession()
+
         params = {
             "name": query,
             "count": 10,  # Get multiple results to find best match
@@ -353,7 +356,7 @@ class OpenMeteoClient:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if data.get("results") and len(data["results"]) > 0:
+                    if data and data.get("results") and len(data["results"]) > 0:
                         # If state filter provided, prioritize results from that state
                         if state_filter:
                             for result in data["results"]:
@@ -385,13 +388,13 @@ class OpenMeteoClient:
         country = result.get("country")
         admin1 = result.get("admin1")  # State/province
 
-        if lat is not None and lon is not None:
+        if lat is not None and lon is not None and name:
             # Build display name
-            display_parts = [name]
+            display_parts: list[str] = [str(name)]
             if admin1:
-                display_parts.append(admin1)
+                display_parts.append(str(admin1))
             if country:
-                display_parts.append(country)
+                display_parts.append(str(country))
             display_name = ", ".join(display_parts)
 
             return (lat, lon, display_name)

@@ -151,7 +151,8 @@ class SoccerCog(commands.Cog):
         league_matches = await self.fotmob_client.get_league_matches(league_id)
 
         if not league_matches:
-            await ctx.send(f"No matches found for {league.upper()}")
+            league_upper = league.upper() if league else "LEAGUE"
+            await ctx.send(f"No matches found for {league_upper}")
             return
 
         # Get today's date in Los Angeles timezone
@@ -356,7 +357,7 @@ class SoccerCog(commands.Cog):
 
         # Fallback: send regular text output
         all_tables = group_tables + extra_tables
-        current_batch = []
+        current_batch: list[str] = []
         current_length = 0
 
         for table_text in all_tables:

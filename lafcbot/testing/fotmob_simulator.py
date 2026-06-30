@@ -81,7 +81,7 @@ class FotMobSimulator:
         # Filter events to only those at or before the specified minute
         filtered_events = []
         for event in details.events:
-            event_minute = event.minute
+            event_minute: float = float(event.minute)
             if event.added_time:
                 event_minute += event.added_time / 100.0  # 45+2 becomes 45.02
 

@@ -89,7 +89,7 @@ class WorldCupTask:
         # State tracking for smart scheduling
         self.next_check_time = None
         self.monitoring_active = False
-        self.live_match_ids = set()
+        self.live_match_ids: set[int] = set()
         self.empty_polls_count = 0  # Track consecutive polls with no live matches
 
         # State tracking for monitored matches

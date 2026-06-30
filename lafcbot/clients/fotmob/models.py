@@ -136,7 +136,9 @@ class MatchDetails:
     highlight: Highlight | None = None  # Official match highlights
     extra_time: bool = False  # Whether match went to extra time
     penalties: PenaltyShootout | None = None  # Penalty shootout final result
-    penalty_kicks: list[PenaltyKick] = None  # Individual penalty kicks during shootout
+    penalty_kicks: list[PenaltyKick] | None = (
+        None  # Individual penalty kicks during shootout
+    )
 
 
 @dataclass

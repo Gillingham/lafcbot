@@ -53,7 +53,7 @@ class ESPNClient:
             await self._session.close()
             self._session = None
 
-    async def get_scoreboard(self, sport: str) -> tuple[str, list[Game]]:
+    async def get_scoreboard(self, sport: str) -> tuple[str | None, list[Game]]:
         """
         Get scoreboard for a sport.
 
@@ -90,7 +90,7 @@ class ESPNClient:
             logger.error(f"Unexpected error fetching scores: {e}")
             return (None, [])
 
-    def _parse_scoreboard(self, data: dict) -> tuple[str, list[Game]]:
+    def _parse_scoreboard(self, data: dict) -> tuple[str | None, list[Game]]:
         """Parse scoreboard data from ESPN API."""
         try:
             # Extract league name
