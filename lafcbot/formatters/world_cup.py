@@ -34,6 +34,96 @@ class FormattedMatch:
 class WorldCupFormatter(BaseFormatter):
     """Formats World Cup daily match notifications."""
 
+    def _get_penalty_round_info(self, penalty_kicks):
+        """
+        Analyze penalty kicks to determine round information.
+
+        Args:
+            penalty_kicks: List of PenaltyKick objects
+
+        Returns:
+            Tuple of (current_round, is_sudden_death, home_kick_count, away_kick_count)
+        """
+        if not penalty_kicks:
+            return 0, False, 0, 0
+
+        home_kicks = [pk for pk in penalty_kicks if pk.is_home]
+        away_kicks = [pk for pk in penalty_kicks if not pk.is_home]
+
+        home_count = len(home_kicks)
+        away_count = len(away_kicks)
+        max_kicks_per_team = max(home_count, away_count)
+
+        is_sudden_death = max_kicks_per_team > 5
+        current_round = max_kicks_per_team
+
+        return current_round, is_sudden_death, home_count, away_count
+
+    def format_penalty_shootout_cards(
+        self, penalty_kicks, home_team_name, away_team_name, is_live=False
+    ):
+        """
+        Format penalty shootout as card-style visualization with emojis.
+
+        Args:
+            penalty_kicks: List of PenaltyKick objects
+            home_team_name: Name of home team
+            away_team_name: Name of away team
+            is_live: If True, show blank squares for upcoming kicks in rounds 1-5
+
+        Returns:
+            Formatted string with penalty visualization (single line)
+        """
+        if not penalty_kicks:
+            return ""
+
+        from lafcbot.utils.countries import get_country_flag
+
+        _, is_sudden_death, home_count, away_count = self._get_penalty_round_info(
+            penalty_kicks
+        )
+
+        # Build kick lists for each team
+        home_kicks_display = []
+        away_kicks_display = []
+
+        # Get actual kicks taken
+        for i, pk in enumerate(penalty_kicks):
+            # Determine kick number (1-indexed)
+            if pk.is_home:
+                kick_num = len([k for k in penalty_kicks[: i + 1] if k.is_home])
+            else:
+                kick_num = len([k for k in penalty_kicks[: i + 1] if not k.is_home])
+
+            emoji = "✅" if pk.scored else "❌"
+            kick_display = f"{emoji}{kick_num}"
+
+            if pk.is_home:
+                home_kicks_display.append(kick_display)
+            else:
+                away_kicks_display.append(kick_display)
+
+        # Add blank squares for upcoming kicks (only in rounds 1-5 if live)
+        if is_live and not is_sudden_death:
+            # Fill up to 5 kicks for each team
+            for i in range(home_count, 5):
+                home_kicks_display.append(f"⬜{i + 1}")
+            for i in range(away_count, 5):
+                away_kicks_display.append(f"⬜{i + 1}")
+
+        # Get country flags
+        home_flag = get_country_flag(home_team_name)
+        away_flag = get_country_flag(away_team_name)
+
+        # Build the single-line display
+        home_part = " ".join(home_kicks_display)
+        away_part = " ".join(away_kicks_display)
+
+        home_display = f"{home_flag} {home_part}" if home_flag else home_part
+        away_display = f"{away_flag} {away_part}" if away_flag else away_part
+
+        return f"{home_display} | {away_display}"
+
     def format_team_with_flag_and_rank(self, team_name: str) -> str:
         """
         Format team name with flag emoji and world ranking.
@@ -143,6 +233,15 @@ class WorldCupFormatter(BaseFormatter):
                 details = await fotmob_client.get_match_details(
                     page_slug=match.page_slug, force_refresh=True
                 )
+            except Exception:
+                # Fall back to simple formatting on API error
+                details = None
+        elif match.id:
+            # Try fetching by match_id if no page_slug available
+            try:
+                details = await fotmob_client.get_match_details_authenticated(
+                    match_id=match.id
+                )
                 if details:
                     if details.match.venue:
                         venue_info = details.match.venue
@@ -179,11 +278,22 @@ class WorldCupFormatter(BaseFormatter):
             # Determine winner (check penalties first if scores are tied)
             home_won = False
             away_won = False
+            penalty_card_line = None
+
             if details and details.penalties:
-                pen_score = (
-                    f"{details.penalties.home_score}-{details.penalties.away_score}"
-                )
-                score_part += f" ({pen_score} pens)"
+                # Check if we have detailed penalty kick data for card visualization
+                if details.penalty_kicks:
+                    # Use card visualization instead of text score
+                    penalty_card_line = self.format_penalty_shootout_cards(
+                        details.penalty_kicks, home_name, away_name, is_live=False
+                    )
+                else:
+                    # Fallback to text format if no kick details
+                    pen_score = (
+                        f"{details.penalties.home_score}-{details.penalties.away_score}"
+                    )
+                    score_part += f" ({pen_score} pens)"
+
                 home_won = details.penalties.home_score > details.penalties.away_score
                 away_won = details.penalties.away_score > details.penalties.home_score
             else:
@@ -198,6 +308,10 @@ class WorldCupFormatter(BaseFormatter):
                 away_display = f"**{away_display}**"
 
             match_line = f"{home_display} vs {away_display} - {score_part}"
+
+            # Add penalty card line if available
+            if penalty_card_line:
+                match_line += f"\n{penalty_card_line}"
         elif match_to_display.start_time:
             match_time = match_to_display.start_time.astimezone(self.timezone)
             time_str = match_time.strftime("%b %d, %I:%M %p PT")

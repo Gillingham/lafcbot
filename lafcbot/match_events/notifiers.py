@@ -1012,15 +1012,23 @@ class MatchNotifier:
             emoji = "❌"
             result = "**MISSED!**"
 
-        # Show running shootout score
-        score_display = (
-            f"({penalty_kick.home_shootout_score}-{penalty_kick.away_shootout_score})"
-        )
+        # Build penalty card visualization if we have all penalty kicks
+        penalty_card_line = ""
+        if details.penalty_kicks:
+            # Import the formatter to use penalty card visualization
+            from zoneinfo import ZoneInfo
+
+            from lafcbot.formatters.world_cup import WorldCupFormatter
+
+            formatter = WorldCupFormatter(timezone=ZoneInfo("America/Los_Angeles"))
+            penalty_card_line = formatter.format_penalty_shootout_cards(
+                details.penalty_kicks, home_team, away_team, is_live=True
+            )
 
         message = (
-            f"{emoji} **PENALTY KICK {result}**\n\n"
+            f"{emoji} **PENALTY KICK {result}**\n"
             f"{penalty_kick.player_name} ({team_display})\n"
-            f"Shootout Score: {score_display}"
+            f"{penalty_card_line}"
         )
 
         # Send to all configured live channels
