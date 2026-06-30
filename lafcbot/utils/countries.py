@@ -4,7 +4,6 @@ from functools import cache
 
 from lafcbot.clients.fotmob.models import CountryInfo
 
-
 # UK subdivision flags to prevent bot from using the generic UK flag
 SUBDIVISION_FLAGS: dict[str, str] = {
     "GB-ENG": "\U0001f3f4\U000e0067\U000e0062\U000e0065\U000e006e\U000e0067\U000e007f",  # England
@@ -54,7 +53,6 @@ COUNTRIES: list[CountryInfo] = [
     CountryInfo("Finland", "FI", "FIN", "FIN", 75),
     CountryInfo("Iceland", "IS", "ISL", "ISL", 74),
     CountryInfo("Israel", "IL", "ISR", "ISR", 76),
-
     # CONMEBOL
     CountryInfo("Brazil", "BR", "BRA", "BRA", 6),
     CountryInfo("Argentina", "AR", "ARG", "ARG", 1),
@@ -66,7 +64,6 @@ COUNTRIES: list[CountryInfo] = [
     CountryInfo("Paraguay", "PY", "PRY", "PAR", 42),
     CountryInfo("Venezuela", "VE", "VEN", "VEN", 48),
     CountryInfo("Bolivia", "BO", "BOL", "BOL", 77),
-
     # CONCACAF
     CountryInfo("USA", "US", "USA", "USA", 15),
     CountryInfo("United States", "US", "USA", "USA", 15),
@@ -84,7 +81,6 @@ COUNTRIES: list[CountryInfo] = [
     CountryInfo("Guatemala", "GT", "GTM", "GUA", 97),
     CountryInfo("Dominican Republic", "DO", "DOM", "DOM", 144),
     CountryInfo("Suriname", "SR", "SUR", "SUR", 125),
-
     # AFC
     CountryInfo("Japan", "JP", "JPN", "JPN", 18),
     CountryInfo("South Korea", "KR", "KOR", "KOR", 22),
@@ -99,7 +95,6 @@ COUNTRIES: list[CountryInfo] = [
     CountryInfo("Thailand", "TH", "THA", "THA", 94),
     CountryInfo("Jordan", "JO", "JOR", "JOR", 64),
     CountryInfo("Uzbekistan", "UZ", "UZB", "UZB", 50),
-
     # CAF
     CountryInfo("Nigeria", "NG", "NGA", "NGA", 25),
     CountryInfo("Senegal", "SN", "SEN", "SEN", 16),
@@ -114,15 +109,13 @@ COUNTRIES: list[CountryInfo] = [
     CountryInfo("Côte d'Ivoire", "CI", "CIV", "CIV", 29),
     CountryInfo("Cape Verde", "CV", "CPV", "CPV", 67),
     CountryInfo("DR Congo", "CD", "COD", "COD", 45),
-
     # OFC
     CountryInfo("New Zealand", "NZ", "NZL", "NZL", 85),
 ]
 
 
 COUNTRY_INFO_BY_NAME: dict[str, CountryInfo] = {
-    country.country_name.casefold(): country
-    for country in COUNTRIES
+    country.country_name.casefold(): country for country in COUNTRIES
 }
 
 
