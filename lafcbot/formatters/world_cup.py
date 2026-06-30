@@ -235,18 +235,20 @@ class WorldCupFormatter(BaseFormatter):
                 details = await fotmob_client.get_match_details_authenticated(
                     match_id=match.id
                 )
-                if details:
-                    if details.match.venue:
-                        venue_info = details.match.venue
-                    if details.broadcast_channels:
-                        us_broadcast_channels = [
-                            ch.channel_name
-                            for ch in details.broadcast_channels
-                            if ch.country_name and "USA" in ch.country_name.upper()
-                        ]
             except Exception:
                 # Fall back to simple formatting on API error
                 details = None
+
+        # Extract venue and broadcast info from details if available
+        if details:
+            if details.match.venue:
+                venue_info = details.match.venue
+            if details.broadcast_channels:
+                us_broadcast_channels = [
+                    ch.channel_name
+                    for ch in details.broadcast_channels
+                    if ch.country_name and "USA" in ch.country_name.upper()
+                ]
 
         # Use detailed match info if available (has more up-to-date status)
         match_to_display = details.match if details else match
