@@ -264,16 +264,17 @@ class WorldCupFormatter(BaseFormatter):
             score_part = f"{match_to_display.home_score}-{match_to_display.away_score} ({time_display})"
             match_line = f"{home_display} vs {away_display} - {score_part}"
         elif match_to_display.is_finished:
-            score_part = (
-                f"{match_to_display.home_score}-{match_to_display.away_score} (FT)"
-            )
-
             # Determine winner (check penalties first if scores are tied)
             home_won = False
             away_won = False
             penalty_card_line = None
 
             if details and details.penalties:
+                # Match went to penalties - use "Pen" instead of "FT"
+                score_part = (
+                    f"{match_to_display.home_score}-{match_to_display.away_score} (Pen)"
+                )
+
                 # Check if we have detailed penalty kick data for card visualization
                 if details.penalty_kicks:
                     # Use card visualization instead of text score
@@ -290,7 +291,10 @@ class WorldCupFormatter(BaseFormatter):
                 home_won = details.penalties.home_score > details.penalties.away_score
                 away_won = details.penalties.away_score > details.penalties.home_score
             else:
-                # Regular time winner
+                # Regular time winner - use "FT"
+                score_part = (
+                    f"{match_to_display.home_score}-{match_to_display.away_score} (FT)"
+                )
                 home_won = match_to_display.home_score > match_to_display.away_score
                 away_won = match_to_display.away_score > match_to_display.home_score
 
