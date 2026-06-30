@@ -186,7 +186,14 @@ class SoccerCog(commands.Cog):
             # For tomorrow or default today view
             else:
                 if not show_tomorrow and m.is_live:
-                    target_matches.append(m)
+                    # Only include live matches that started today
+                    if m.start_time:
+                        match_time_la = m.start_time.astimezone(la_tz)
+                        if match_time_la.date() == today_la:
+                            target_matches.append(m)
+                    else:
+                        # If no start_time, include it (shouldn't happen in practice)
+                        target_matches.append(m)
                 elif m.start_time:
                     match_time_la = m.start_time.astimezone(la_tz)
                     if match_time_la.date() == target_date:
