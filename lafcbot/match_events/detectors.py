@@ -81,6 +81,13 @@ def is_substitution_event(event) -> bool:
     Returns:
         True if event is a substitution, False otherwise
     """
+    # Filter out bogus substitution events with no player data
+    # (FotMob sometimes adds these at the end of penalty shootouts)
+    if not getattr(event, "player_name", None) and not getattr(
+        event, "assist_name", None
+    ):
+        return False
+
     # Prefer explicit substitution type
     try:
         if event.type and str(event.type).lower() in ("substitution", "sub"):

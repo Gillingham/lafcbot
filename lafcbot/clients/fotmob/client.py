@@ -1125,13 +1125,6 @@ class FotMobClient:
                 away_score=last_pk.away_shootout_score,
             )
 
-        # If penalties are complete (we have a final shootout score), mark match as finished
-        # This handles cases where FotMob hasn't updated general.finished yet
-        if penalties and status == "live":
-            # Check if one team has won the shootout (scores are different)
-            if penalties.home_score != penalties.away_score:
-                match.status = "finished"
-
         return MatchDetails(
             match=match,
             events=events,

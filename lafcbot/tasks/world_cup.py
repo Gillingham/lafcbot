@@ -952,6 +952,13 @@ class WorldCupTask:
         if not notifications_config.get("extra_time", True):
             return
 
+        # Don't send extra time notification if penalties have started
+        if details.penalties or (
+            details.match.match_time_display
+            and "pen" in details.match.match_time_display.lower()
+        ):
+            return
+
         if details.extra_time and not state["extra_time_sent"]:
             await self.notifier.notify_extra_time(channel, details)
             state["extra_time_sent"] = True
