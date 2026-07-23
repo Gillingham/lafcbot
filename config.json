@@ -5,7 +5,8 @@
     "ignored_domains": [
       "tenor.com",
       "giphy.com",
-      "gfycat.com"
+      "gfycat.com",
+      "klipy.com"
     ]
   },
   "channel_leagues": {
@@ -17,7 +18,7 @@
   },
   "match_output_path": "test_data",
   "world_cup": {
-    "enabled": true,
+    "enabled": false,
     "daily_time_hour": 8,
     "servers": [
       {
@@ -31,7 +32,7 @@
       }
     ],
     "live_monitoring": {
-      "enabled": true,
+      "enabled": false,
       "check_interval_seconds": 60,
       "pre_match_minutes": 15,
       "fallback_check_hours": 12,
@@ -53,7 +54,7 @@
         "role_name": "Panda Ping",
         "announce_wins": true,
         "announce_losses": true,
-        "daily_reminder": true
+        "daily_reminder": false
       }
     ]
   },
