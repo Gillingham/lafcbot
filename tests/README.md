@@ -38,15 +38,15 @@ def test_penalty_formatting():
     # Load match and get data
     sim = load_test_match(4653706)
     details = sim.get_full_match()
-    
+
     # Call ACTUAL formatter with real data
     formatter = WorldCupFormatter(timezone=ZoneInfo("UTC"))
     result = formatter.format_penalty_shootout_cards(
         details.penalty_kicks,
         details.match.home_team.name,
-        details.match.away_team.name
+        details.match.away_team.name,
     )
-    
+
     # Assert on output
     assert "🟩" in result or "🟥" in result
 ```
