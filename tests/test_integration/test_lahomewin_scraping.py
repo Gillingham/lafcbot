@@ -29,9 +29,9 @@ async def test_scrape_real_website():
             "inactive",
             "off-season",
         ], f"Invalid status: {deal.status}"
-        assert (
-            deal.redemption_instructions
-        ), f"Deal missing redemption instructions: {deal}"
+        assert deal.redemption_instructions, (
+            f"Deal missing redemption instructions: {deal}"
+        )
 
     # Log all deal IDs for manual verification
     print("\nScraped deals:")
