@@ -501,15 +501,8 @@ class PandaPingCog(commands.Cog):
             is_home=True,
         )
 
-        # Add "Final: " prefix to match original format
-        result_text = f"{result_text} - Final"
-
-        if is_win:
-            # Win message with role mention (triggers notification)
-            message = f"{role.mention} ||{result_text}||"
-        else:
-            # Loss message without role mention (no notification)
-            message = f"||{result_text}||"
+        # Send message with role mention (triggers notification for both wins and losses)
+        message = f"{role.mention} ||{result_text} - Final||"
 
         # Send the message
         await channel.send(message)
