@@ -46,15 +46,22 @@
       }
     }
   },
-  "pandaping": {
+  "dealsping": {
+    "enabled": true,
+    "scrape_time_hour": 8,
     "servers": [
       {
         "guild_id": "609238113705000981",
-        "channel_name": "other-sports",
-        "role_name": "Panda Ping",
-        "announce_wins": true,
-        "announce_losses": true,
-        "daily_reminder": false
+        "deal_routes": {
+          "ono-hawaiian-bbq-lafc": {
+            "channel_name": "lafc-match",
+            "role_name": null
+          },
+          "doordash-lafc": {
+            "channel_name": "lafc-match",
+            "role_name": null
+          }
+        }
       }
     ]
   },

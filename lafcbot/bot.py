@@ -97,16 +97,16 @@ async def on_ready():
         print(f"Failed to load latepass cog: {e}")
 
     try:
-        bot.load_extension("lafcbot.cogs.pandaping")
-        print("Loaded pandaping cog")
-    except Exception as e:
-        print(f"Failed to load pandaping cog: {e}")
-
-    try:
         bot.load_extension("lafcbot.cogs.xcancel")
         print("Loaded xcancel cog")
     except Exception as e:
         print(f"Failed to load xcancel cog: {e}")
+
+    try:
+        bot.load_extension("lafcbot.cogs.dealsping")
+        print("Loaded dealsping cog")
+    except Exception as e:
+        print(f"Failed to load dealsping cog: {e}")
 
     # Load config and start World Cup task if enabled
     wc_config = config.get("world_cup", {})
@@ -162,6 +162,10 @@ async def shutdown():
     misc_cog = bot.get_cog("MiscCog")
     if misc_cog and misc_cog.weather_client:
         await misc_cog.weather_client.close()
+
+    dealsping_cog = bot.get_cog("DealsPingCog")
+    if dealsping_cog and dealsping_cog.lahomewin_client:
+        await dealsping_cog.lahomewin_client.close()
 
 
 def main():
