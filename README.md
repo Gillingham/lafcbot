@@ -8,7 +8,7 @@ Discord bot for soccer match information and fun utilities, powered by FotMob da
 - 🏟️ Match schedules with venue information
 - 📺 US TV provider information
 - 🏆 League standings
-- 🌍 Support for major leagues (MLS, NWSL, World Cup, Premier League, Champions League)
+- 🌍 Support for major leagues (MLS, NWSL, Leagues Cup, World Cup, Premier League, Champions League)
 - ⏰ Times displayed in configurable timezone (default: Pacific Time)
 - 🚩 Country flags for World Cup matches
 - ⚽ **Real-time goal notifications** for World Cup matches
@@ -298,6 +298,7 @@ Shows matches for the current day, or the next day with matches if none today.
 **Examples:**
 ```
 !matches                # Uses channel-configured league (or MLS if none)
+!matches Leagues        # Leagues Cup (aliases: leagues, lc, leagues cup)
 !matches World Cup      # World Cup with country flags
 !matches Premier        # Premier League
 !matches UCL            # Champions League
