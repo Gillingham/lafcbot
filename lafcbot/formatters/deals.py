@@ -37,21 +37,25 @@ class DealsFormatter(BaseFormatter):
 
         return "\n".join(parts)
 
-    def format_active_deals_with_redemption(self, active_deals: list[Deal]) -> str:
+    def format_active_deals_with_redemption(
+        self, active_deals: list[Deal]
+    ) -> list[str]:
         """Format active deals with full redemption information.
 
         Args:
             active_deals: List of active deals
 
         Returns:
-            Formatted message with active deals and redemption instructions
+            List of formatted deal blocks (one per deal) for message splitting
         """
         if not active_deals:
-            return "No deals are active today"
+            return ["No deals are active today"]
 
-        parts = [f"**Active Deals Today ({len(active_deals)})**"]
+        header = f"**Active Deals Today ({len(active_deals)})**"
+        deal_blocks = [header]
 
         for deal in active_deals:
+            parts = []
             # Restaurant name may already contain Discord markdown link
             parts.append(f"{deal.restaurant_name} - {deal.description}")
 
@@ -67,9 +71,10 @@ class DealsFormatter(BaseFormatter):
             ):
                 parts.append(f"*How to redeem*: {deal.redemption_instructions}")
 
-            parts.append("")  # Blank line between deals
+            # Each deal is a separate block that won't be split
+            deal_blocks.append("\n".join(parts))
 
-        return "\n".join(parts)
+        return deal_blocks
 
     def format_deal_list(self, deals: list[Deal]) -> str:
         """Format a list of deals for the !deals list command.

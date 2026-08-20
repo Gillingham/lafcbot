@@ -252,6 +252,47 @@ class DealsPingCog(commands.Cog):
         # Mark as sent in database
         await self._mark_ping_sent(deal.deal_id, guild_id)
 
+    async def _send_deal_blocks(self, ctx: commands.Context, deal_blocks: list[str]):
+        """Send deal blocks, splitting into multiple messages if needed.
+
+        Args:
+            ctx: Command context
+            deal_blocks: List of deal blocks (first item is header, rest are individual deals)
+        """
+        MAX_LENGTH = 2000
+
+        if not deal_blocks:
+            return
+
+        # If only one block or total length fits, send as single message
+        full_message = "\n\n".join(deal_blocks)
+        if len(full_message) <= MAX_LENGTH:
+            await ctx.send(full_message)
+            return
+
+        # Need to split - always include header in first message
+        header = deal_blocks[0]
+        deals = deal_blocks[1:]
+
+        current_chunk = [header]
+        current_length = len(header) + 2  # +2 for newlines
+
+        for deal_block in deals:
+            block_length = len(deal_block) + 2  # +2 for newlines between blocks
+
+            # If adding this deal would exceed limit, send current chunk
+            if current_length + block_length > MAX_LENGTH and len(current_chunk) > 1:
+                await ctx.send("\n\n".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+
+            current_chunk.append(deal_block)
+            current_length += block_length
+
+        # Send remaining chunk
+        if current_chunk:
+            await ctx.send("\n\n".join(current_chunk))
+
     @commands.group(invoke_without_command=True)
     async def deals(self, ctx: commands.Context):
         """Show today's active deals with redemption instructions.
@@ -277,8 +318,10 @@ class DealsPingCog(commands.Cog):
                 return
 
             # Format active deals with redemption info
-            message = self.formatter.format_active_deals_with_redemption(active_deals)
-            await ctx.send(message)
+            deal_blocks = self.formatter.format_active_deals_with_redemption(
+                active_deals
+            )
+            await self._send_deal_blocks(ctx, deal_blocks)
 
         except Exception as e:
             logger.error(f"Error in !deals: {e}", exc_info=True)
@@ -299,7 +342,29 @@ class DealsPingCog(commands.Cog):
 
             # Format the deals list
             message = self.formatter.format_deal_list(deals)
-            await ctx.send(message)
+
+            # Split if needed (less critical for list view since it's more compact)
+            if len(message) <= 2000:
+                await ctx.send(message)
+            else:
+                # For list view, split on double newlines (section breaks)
+                sections = message.split("\n\n")
+                current_chunk: list[str] = []
+                current_length = 0
+
+                for section in sections:
+                    section_length = len(section) + 2
+
+                    if current_length + section_length > 2000 and current_chunk:
+                        await ctx.send("\n\n".join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+
+                    current_chunk.append(section)
+                    current_length += section_length
+
+                if current_chunk:
+                    await ctx.send("\n\n".join(current_chunk))
 
         except Exception as e:
             logger.error(f"Error in !deals list: {e}", exc_info=True)

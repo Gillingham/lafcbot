@@ -36,17 +36,18 @@ class MiscCog(commands.Cog):
         """Show today's scores for a sports league in a single concise line.
 
         Usage: !scores <league>
-        Available leagues: nba, mlb, nhl, nfl, f1
+        Available leagues: nba, wnba, mlb, nhl, nfl, f1
 
         Examples:
           !scores              - Show available leagues
           !scores mlb          - Major League Baseball scores
           !scores nba          - NBA scores
+          !scores wnba         - WNBA scores
           !scores nhl          - NHL scores
           !scores nfl          - NFL scores
           !scores f1           - Formula 1 results
         """
-        available = "nba, mlb, nhl, nfl, f1"
+        available = "nba, wnba, mlb, nhl, nfl, f1"
 
         # No league specified - show available leagues
         if league is None:

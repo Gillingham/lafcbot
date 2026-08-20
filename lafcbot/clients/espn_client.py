@@ -30,6 +30,7 @@ class ESPNClient:
 
     SPORT_PATHS = {
         "nba": "basketball/nba",
+        "wnba": "basketball/wnba",
         "mlb": "baseball/mlb",
         "nhl": "hockey/nhl",
         "nfl": "football/nfl",
