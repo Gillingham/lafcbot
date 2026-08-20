@@ -49,6 +49,13 @@
   "dealsping": {
     "enabled": true,
     "scrape_time_hour": 8,
+    "blacklist": [
+      "con-az-car-caf-dodgers",
+      "el-portal-restaurant-dodgers",
+      "mountain-dew-mlb",
+      "norms-galaxy",
+      "uber-eats-dodgers"
+    ],
     "servers": [
       {
         "guild_id": "609238113705000981",

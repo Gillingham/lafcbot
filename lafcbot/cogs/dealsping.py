@@ -31,6 +31,7 @@ class DealsPingCog(commands.Cog):
         self.enabled = self.dealsping_config.get("enabled", True)
         self.scrape_time_hour = self.dealsping_config.get("scrape_time_hour", 8)
         self.server_configs = self.dealsping_config.get("servers", [])
+        self.blacklist = set(self.dealsping_config.get("blacklist", []))
 
         # Log configuration on startup
         if not self.enabled:
@@ -310,8 +311,12 @@ class DealsPingCog(commands.Cog):
                 await ctx.send("No deals found on lahomewin.com")
                 return
 
-            # Filter to only active deals
-            active_deals = [d for d in deals if d.status == "active"]
+            # Filter to only active deals and exclude blacklisted ones
+            active_deals = [
+                d
+                for d in deals
+                if d.status == "active" and d.deal_id not in self.blacklist
+            ]
 
             if not active_deals:
                 await ctx.send("No deals are active today")
@@ -340,8 +345,11 @@ class DealsPingCog(commands.Cog):
                 await ctx.send("No deals found on lahomewin.com")
                 return
 
+            # Filter out blacklisted deals
+            filtered_deals = [d for d in deals if d.deal_id not in self.blacklist]
+
             # Format the deals list
-            message = self.formatter.format_deal_list(deals)
+            message = self.formatter.format_deal_list(filtered_deals)
 
             # Split if needed (less critical for list view since it's more compact)
             if len(message) <= 2000:
