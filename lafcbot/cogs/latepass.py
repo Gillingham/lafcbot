@@ -56,6 +56,11 @@ class LatepassCog(commands.Cog):
             parsed = urlparse(url if url.startswith("http") else f"http://{url}")
             domain = parsed.netloc.lower()
 
+            if domain == "cdn.discordapp.com" and parsed.path.startswith(
+                "/attachments/"
+            ):
+                return True
+
             # Check if domain or any parent domain is in ignore list
             # e.g., "media.tenor.com" matches "tenor.com"
             for ignored_domain in self.ignored_domains:
