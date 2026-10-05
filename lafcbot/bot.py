@@ -103,6 +103,12 @@ async def on_ready():
         print(f"Failed to load xcancel cog: {e}")
 
     try:
+        bot.load_extension("lafcbot.cogs.vxt")
+        print("Loaded vxt cog")
+    except Exception as e:
+        print(f"Failed to load vxt cog: {e}")
+
+    try:
         bot.load_extension("lafcbot.cogs.dealsping")
         print("Loaded dealsping cog")
     except Exception as e:

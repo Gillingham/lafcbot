@@ -76,5 +76,14 @@
   "xcancel": {
     "enabled_guilds": [
     ]
+  },
+  "vxt": {
+    "servers": [
+      {
+        "guild_id": "609238113705000981",
+        "instagram_enabled": false,
+        "tiktok_enabled": false
+      }
+    ]
   }
 }

@@ -231,6 +231,10 @@ class LatepassCog(commands.Cog):
         if not message.guild:
             return
 
+        # Opt out of latepass tracking for this message
+        if message.content.strip().endswith("!nobot"):
+            return
+
         # Extract URLs from message
         urls = self.url_pattern.findall(message.content)
         if not urls:
