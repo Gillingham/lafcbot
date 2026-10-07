@@ -13,7 +13,7 @@ WEBHOOK_NAME = "VxT"
 DOMAIN_MAP = {
     "twitter.com": "fxtwitter.com",
     "x.com": "fxtwitter.com",
-    "instagram.com": "ddinstagram.com",
+    "instagram.com": "kkinstagram.com",
     "tiktok.com": "tiktxk.com",
 }
 

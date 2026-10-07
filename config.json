@@ -81,8 +81,8 @@
     "servers": [
       {
         "guild_id": "609238113705000981",
-        "instagram_enabled": false,
-        "tiktok_enabled": false
+        "instagram_enabled": true,
+        "tiktok_enabled": true
       }
     ]
   }
