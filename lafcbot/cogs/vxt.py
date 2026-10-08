@@ -1,14 +1,23 @@
 """VxT cog for fixing social media embeds via delete + webhook repost."""
 
+import io
 import logging
 import re
 
 import discord
 from discord.ext import commands
 
+from lafcbot.clients.instagram_client import InstagramClient, MediaSlide
+
 logger = logging.getLogger(__name__)
 
 WEBHOOK_NAME = "VxT"
+
+# kkinstagram.com can't render multi-image/video carousels (its /p/ route
+# just 302s to the single representative image), so for carousels we instead
+# download the slides ourselves and attach them directly - capped at
+# Discord's 10-attachments-per-message limit.
+MAX_CAROUSEL_SLIDES = 10
 
 DOMAIN_MAP = {
     "twitter.com": "fxtwitter.com",
@@ -16,6 +25,9 @@ DOMAIN_MAP = {
     "instagram.com": "kkinstagram.com",
     "tiktok.com": "tnktok.com",
 }
+
+# Matches both /p/{shortcode} and /{username}/p/{shortcode} forms.
+INSTAGRAM_POST_PATH = re.compile(r"^/(?:[^/?#]+/)?p/([A-Za-z0-9_-]+)")
 
 
 class VxTCog(commands.Cog):
@@ -26,6 +38,7 @@ class VxTCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._webhook_cache: dict[int, discord.Webhook] = {}
+        self.instagram_client = InstagramClient()
 
         # Load per-server configuration
         from lafcbot.utils.config import load_config
@@ -61,15 +74,66 @@ class VxTCog(commands.Cog):
             domains.add("tiktok.com")
         return domains
 
-    def _replace_domain(self, match: re.Match, enabled_domains: set[str]) -> str:
+    async def _replace_domain(
+        self, match: re.Match, enabled_domains: set[str]
+    ) -> tuple[str, list[discord.File]]:
         """Rebuild a matched URL with its embed-fixing domain substituted in,
         leaving the URL untouched if its domain isn't enabled for this guild.
+
+        Returns the replacement text plus any extra files to attach (used for
+        Instagram carousels, which kkinstagram can't render on its own).
         """
         domain = match.group(1).lower()
         if domain not in enabled_domains:
-            return match.group(0)
+            return match.group(0), []
         rest = match.group(2) or ""
-        return f"https://{DOMAIN_MAP[domain]}{rest}"
+
+        if domain == "instagram.com":
+            post_match = INSTAGRAM_POST_PATH.match(rest)
+            if post_match:
+                slides = await self.instagram_client.get_carousel_slides(
+                    post_match.group(1)
+                )
+                if slides:
+                    files = await self._carousel_files(slides)
+                    text = match.group(0)
+                    if len(slides) > MAX_CAROUSEL_SLIDES:
+                        text += f" (showing {len(files)}/{len(slides)} slides)"
+                    return text, files
+
+        return f"https://{DOMAIN_MAP[domain]}{rest}", []
+
+    async def _carousel_files(self, slides: list[MediaSlide]) -> list[discord.File]:
+        """Download up to MAX_CAROUSEL_SLIDES carousel slides as Discord files."""
+        files = []
+        for i, slide in enumerate(slides[:MAX_CAROUSEL_SLIDES]):
+            data = await self.instagram_client.download(slide.url)
+            if data is None:
+                continue
+            ext = "mp4" if slide.is_video else "jpg"
+            files.append(
+                discord.File(io.BytesIO(data), filename=f"slide_{i + 1}.{ext}")
+            )
+        return files
+
+    async def _process_content(
+        self, content: str, enabled_domains: set[str]
+    ) -> tuple[str, list[discord.File]]:
+        """Rewrite all matched links in a message's content, awaiting the
+        per-match domain replacement (which may need to hit the network),
+        and collect any extra files (e.g. downloaded carousel slides).
+        """
+        pieces = []
+        extra_files = []
+        last_end = 0
+        for match in self.url_pattern.finditer(content):
+            pieces.append(content[last_end : match.start()])
+            replacement, files = await self._replace_domain(match, enabled_domains)
+            pieces.append(replacement)
+            extra_files.extend(files)
+            last_end = match.end()
+        pieces.append(content[last_end:])
+        return "".join(pieces), extra_files
 
     async def _get_webhook(self, channel) -> discord.Webhook:
         """Get or create the VxT webhook for a channel, caching the result."""
@@ -108,15 +172,18 @@ class VxTCog(commands.Cog):
         if guild_id not in self.server_settings:
             return
 
+        if not self.url_pattern.search(message.content):
+            return
+
         enabled_domains = self._enabled_domains(guild_id)
-        new_content = self.url_pattern.sub(
-            lambda m: self._replace_domain(m, enabled_domains), message.content
+        new_content, extra_files = await self._process_content(
+            message.content, enabled_domains
         )
-        if new_content == message.content:
+        if new_content == message.content and not extra_files:
             return
 
         try:
-            files = [await a.to_file() for a in message.attachments]
+            files = [await a.to_file() for a in message.attachments] + extra_files
 
             webhook = await self._get_webhook(message.channel)
             send_kwargs = {
