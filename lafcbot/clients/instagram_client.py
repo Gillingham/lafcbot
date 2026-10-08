@@ -1,4 +1,4 @@
-"""Client for fetching Instagram post media, including multi-image/video carousels."""
+"""Client for fetching Instagram post media and metadata."""
 
 import json
 import logging
@@ -22,14 +22,34 @@ CONTEXT_JSON_PATTERN = re.compile(r'"contextJSON":"((?:[^"\\]|\\.)*)"')
 
 @dataclass
 class MediaSlide:
-    """A single image or video slide of an Instagram post."""
+    """A single image or video slide of an Instagram post.
+
+    `url` is the actual media to download (the playable video, or the image
+    itself). `thumbnail_url` is always a static image, suitable for use as a
+    Discord embed's preview image even when the slide is a video.
+    """
 
     url: str
+    thumbnail_url: str
     is_video: bool
 
 
+@dataclass
+class InstagramPost:
+    """An Instagram post - single image/video or multi-slide carousel - and
+    its display metadata.
+    """
+
+    slides: list[MediaSlide]
+    username: str | None
+    avatar_url: str | None
+    like_count: int | None
+    comment_count: int | None
+    caption: str | None
+
+
 class InstagramClient:
-    """Async client for fetching Instagram carousel post media."""
+    """Async client for fetching Instagram post media and metadata."""
 
     def __init__(self, session: aiohttp.ClientSession | None = None):
         """Initialize the client.
@@ -39,7 +59,7 @@ class InstagramClient:
         """
         self._session = session
         self._owns_session = session is None
-        self._slides_cache: dict[str, list[MediaSlide] | None] = {}
+        self._post_cache: dict[str, InstagramPost | None] = {}
 
     async def close(self):
         """Close the HTTP session if we own it."""
@@ -47,19 +67,18 @@ class InstagramClient:
             await self._session.close()
             self._session = None
 
-    async def get_carousel_slides(self, shortcode: str) -> list[MediaSlide] | None:
-        """Return the slides of a multi-image/video carousel post.
+    async def get_post(self, shortcode: str) -> InstagramPost | None:
+        """Return an Instagram post's media slides and display metadata.
 
-        Returns None if the post isn't a carousel, or if its data couldn't be
-        fetched or parsed - callers should fall back to normal single-image
-        embed behavior in that case.
+        Returns None if the post's data couldn't be fetched or parsed -
+        callers should fall back to the plain kkinstagram link in that case.
         """
-        if shortcode in self._slides_cache:
-            return self._slides_cache[shortcode]
+        if shortcode in self._post_cache:
+            return self._post_cache[shortcode]
 
-        slides = await self._fetch_carousel_slides(shortcode)
-        self._slides_cache[shortcode] = slides
-        return slides
+        post = await self._fetch_post(shortcode)
+        self._post_cache[shortcode] = post
+        return post
 
     async def download(self, url: str) -> bytes | None:
         """Download raw bytes from an Instagram CDN URL, or None on failure."""
@@ -77,7 +96,7 @@ class InstagramClient:
             logger.warning(f"Failed to download Instagram media: {e}")
             return None
 
-    async def _fetch_carousel_slides(self, shortcode: str) -> list[MediaSlide] | None:
+    async def _fetch_post(self, shortcode: str) -> InstagramPost | None:
         if self._session is None:
             self._session = aiohttp.ClientSession()
 
@@ -98,10 +117,10 @@ class InstagramClient:
             logger.warning(f"Failed to fetch Instagram embed for {shortcode}: {e}")
             return None
 
-        return self._parse_carousel_slides(html, shortcode)
+        return self._parse_post(html, shortcode)
 
     @staticmethod
-    def _parse_carousel_slides(html: str, shortcode: str) -> list[MediaSlide] | None:
+    def _parse_post(html: str, shortcode: str) -> InstagramPost | None:
         match = CONTEXT_JSON_PATTERN.search(html)
         if not match:
             return None
@@ -113,15 +132,44 @@ class InstagramClient:
             logger.warning(f"Failed to parse Instagram post data for {shortcode}: {e}")
             return None
 
-        if media.get("__typename") != "GraphSidecar":
+        sidecar_edges = media.get("edge_sidecar_to_children", {}).get("edges", [])
+        if sidecar_edges:
+            slides = [
+                slide
+                for slide in (
+                    InstagramClient._slide_from_node(edge.get("node", {}))
+                    for edge in sidecar_edges
+                )
+                if slide is not None
+            ]
+        else:
+            slides = [
+                s for s in [InstagramClient._slide_from_node(media)] if s is not None
+            ]
+
+        if not slides:
             return None
 
-        slides = []
-        for edge in media.get("edge_sidecar_to_children", {}).get("edges", []):
-            node = edge.get("node", {})
-            is_video = node.get("is_video", False)
-            url = node.get("video_url") if is_video else node.get("display_url")
-            if url:
-                slides.append(MediaSlide(url=url, is_video=is_video))
+        caption_edges = media.get("edge_media_to_caption", {}).get("edges", [])
+        caption = caption_edges[0]["node"]["text"] if caption_edges else None
+        owner = media.get("owner", {})
 
-        return slides or None
+        return InstagramPost(
+            slides=slides,
+            username=owner.get("username"),
+            avatar_url=owner.get("profile_pic_url"),
+            like_count=media.get("edge_liked_by", {}).get("count"),
+            comment_count=media.get("edge_media_to_comment", {}).get("count"),
+            caption=caption,
+        )
+
+    @staticmethod
+    def _slide_from_node(node: dict) -> MediaSlide | None:
+        is_video = node.get("is_video", False)
+        display_url = node.get("display_url")
+        video_url = node.get("video_url") if is_video else None
+        url = video_url or display_url
+        thumbnail_url = display_url or video_url
+        if url is None or thumbnail_url is None:
+            return None
+        return MediaSlide(url=url, thumbnail_url=thumbnail_url, is_video=is_video)

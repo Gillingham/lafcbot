@@ -7,16 +7,21 @@ import re
 import discord
 from discord.ext import commands
 
-from lafcbot.clients.instagram_client import InstagramClient, MediaSlide
+from lafcbot.clients.instagram_client import InstagramClient, InstagramPost, MediaSlide
 
 logger = logging.getLogger(__name__)
 
 WEBHOOK_NAME = "VxT"
 
-# kkinstagram.com can't render multi-image/video carousels (its /p/ route
-# just 302s to the single representative image), so for carousels we instead
-# download the slides ourselves and attach them directly - capped at
-# Discord's 10-attachments-per-message limit.
+INSTAGRAM_COLOR = 0xE1306C
+
+# Keep the caption short, closer to a social-card summary than a full post.
+MAX_CAPTION_LENGTH = 300
+
+# kkinstagram can't render a rich card or multi-image/video carousels (its
+# /p/ route just 302s to a single representative image), so instead we scrape
+# the post ourselves and build the card directly - capped at Discord's
+# 10-attachments-per-message limit for any extra carousel slides.
 MAX_CAROUSEL_SLIDES = 10
 
 DOMAIN_MAP = {
@@ -26,8 +31,10 @@ DOMAIN_MAP = {
     "tiktok.com": "tnktok.com",
 }
 
-# Matches both /p/{shortcode} and /{username}/p/{shortcode} forms.
-INSTAGRAM_POST_PATH = re.compile(r"^/(?:[^/?#]+/)?p/([A-Za-z0-9_-]+)")
+# Matches /p/{shortcode} and /reel/{shortcode}, with or without a leading
+# /{username}/ segment. Instagram's embed endpoint treats both the same way,
+# keyed only on the shortcode.
+INSTAGRAM_POST_PATH = re.compile(r"^/(?:[^/?#]+/)?(?:p|reels?)/([A-Za-z0-9_-]+)")
 
 
 class VxTCog(commands.Cog):
@@ -76,64 +83,157 @@ class VxTCog(commands.Cog):
 
     async def _replace_domain(
         self, match: re.Match, enabled_domains: set[str]
-    ) -> tuple[str, list[discord.File]]:
+    ) -> tuple[str, list[discord.File], list[discord.Embed]]:
         """Rebuild a matched URL with its embed-fixing domain substituted in,
         leaving the URL untouched if its domain isn't enabled for this guild.
 
-        Returns the replacement text plus any extra files to attach (used for
-        Instagram carousels, which kkinstagram can't render on its own).
+        For Instagram, scrapes the post ourselves and returns a rich embed
+        plus any extra files to attach (kkinstagram can only show a single
+        plain image/video, with no caption/stats). Falls back to the plain
+        kkinstagram link if the post couldn't be scraped.
         """
         domain = match.group(1).lower()
         if domain not in enabled_domains:
-            return match.group(0), []
+            return match.group(0), [], []
         rest = match.group(2) or ""
 
         if domain == "instagram.com":
             post_match = INSTAGRAM_POST_PATH.match(rest)
             if post_match:
-                slides = await self.instagram_client.get_carousel_slides(
-                    post_match.group(1)
-                )
-                if slides:
-                    files = await self._carousel_files(slides)
-                    text = match.group(0)
-                    if len(slides) > MAX_CAROUSEL_SLIDES:
-                        text += f" (showing {len(files)}/{len(slides)} slides)"
-                    return text, files
+                post = await self.instagram_client.get_post(post_match.group(1))
+                if post:
+                    shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
+                    files = await self._carousel_files(shown_slides)
 
-        return f"https://{DOMAIN_MAP[domain]}{rest}", []
+                    # Angle-bracket the link so Discord doesn't also generate
+                    # its own preview from the raw URL - we already provide
+                    # richer content below.
+                    link = f"<{match.group(0)}>"
+                    if len(post.slides) > MAX_CAROUSEL_SLIDES:
+                        link += (
+                            f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
+                        )
 
-    async def _carousel_files(self, slides: list[MediaSlide]) -> list[discord.File]:
-        """Download up to MAX_CAROUSEL_SLIDES carousel slides as Discord files."""
+                    if shown_slides[0].is_video:
+                        # The attached video already renders as its own
+                        # native player; an embed on top could only show a
+                        # static thumbnail, which would just duplicate it.
+                        # Put the caption/stats as plain text instead.
+                        text = self._format_caption_text(link, post)
+                        return text, files, []
+
+                    embed = self._build_embed(post)
+                    return link, files, [embed]
+
+        return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
+
+    async def _carousel_files(
+        self, shown_slides: list[MediaSlide]
+    ) -> list[discord.File]:
+        """Download the files needed alongside the embed card: the first
+        slide's video (if it's a video - the embed can only show a static
+        thumbnail for it), plus any remaining carousel slides.
+        """
         files = []
-        for i, slide in enumerate(slides[:MAX_CAROUSEL_SLIDES]):
+
+        first = shown_slides[0]
+        if first.is_video:
+            data = await self.instagram_client.download(first.url)
+            if data is not None:
+                files.append(discord.File(io.BytesIO(data), filename="slide_1.mp4"))
+
+        for i, slide in enumerate(shown_slides[1:], start=2):
             data = await self.instagram_client.download(slide.url)
             if data is None:
                 continue
             ext = "mp4" if slide.is_video else "jpg"
-            files.append(
-                discord.File(io.BytesIO(data), filename=f"slide_{i + 1}.{ext}")
-            )
+            files.append(discord.File(io.BytesIO(data), filename=f"slide_{i}.{ext}"))
+
         return files
+
+    @staticmethod
+    def _truncate_caption(caption: str | None) -> str | None:
+        if not caption:
+            return None
+        caption = caption.strip()
+        if len(caption) > MAX_CAPTION_LENGTH:
+            caption = caption[:MAX_CAPTION_LENGTH].rstrip() + "…"
+        return caption
+
+    @staticmethod
+    def _build_embed(post: InstagramPost) -> discord.Embed:
+        """Build an fxtwitter-style card: author, caption, likes/comments
+        footer, and the first slide's image (hotlinked, not re-uploaded).
+        """
+        embed = discord.Embed(
+            description=VxTCog._truncate_caption(post.caption), color=INSTAGRAM_COLOR
+        )
+
+        if post.username:
+            embed.set_author(
+                name=f"@{post.username}",
+                icon_url=post.avatar_url,
+                url=f"https://www.instagram.com/{post.username}/",
+            )
+
+        stats = []
+        if post.like_count is not None:
+            stats.append(f"❤️ {post.like_count:,}")
+        if post.comment_count is not None:
+            stats.append(f"💬 {post.comment_count:,}")
+        embed.set_footer(text="  ".join(stats) if stats else "Instagram")
+
+        if post.slides:
+            embed.set_image(url=post.slides[0].thumbnail_url)
+
+        return embed
+
+    @staticmethod
+    def _format_caption_text(link: str, post: InstagramPost) -> str:
+        """Format author/caption/stats as plain text, for posts whose video
+        attachment already needs its own native player (no embed on top).
+        """
+        lines = [link]
+
+        stats = []
+        if post.username:
+            stats.append(f"**@{post.username}**")
+        if post.like_count is not None:
+            stats.append(f"❤️ {post.like_count:,}")
+        if post.comment_count is not None:
+            stats.append(f"💬 {post.comment_count:,}")
+        if stats:
+            lines.append(" · ".join(stats))
+
+        caption = VxTCog._truncate_caption(post.caption)
+        if caption:
+            lines.append(caption)
+
+        return "\n".join(lines)
 
     async def _process_content(
         self, content: str, enabled_domains: set[str]
-    ) -> tuple[str, list[discord.File]]:
+    ) -> tuple[str, list[discord.File], list[discord.Embed]]:
         """Rewrite all matched links in a message's content, awaiting the
         per-match domain replacement (which may need to hit the network),
-        and collect any extra files (e.g. downloaded carousel slides).
+        and collect any extra files/embeds (e.g. an Instagram post's slides
+        and card).
         """
         pieces = []
         extra_files = []
+        embeds = []
         last_end = 0
         for match in self.url_pattern.finditer(content):
             pieces.append(content[last_end : match.start()])
-            replacement, files = await self._replace_domain(match, enabled_domains)
+            replacement, files, match_embeds = await self._replace_domain(
+                match, enabled_domains
+            )
             pieces.append(replacement)
             extra_files.extend(files)
+            embeds.extend(match_embeds)
             last_end = match.end()
         pieces.append(content[last_end:])
-        return "".join(pieces), extra_files
+        return "".join(pieces), extra_files, embeds
 
     async def _get_webhook(self, channel) -> discord.Webhook:
         """Get or create the VxT webhook for a channel, caching the result."""
@@ -176,10 +276,10 @@ class VxTCog(commands.Cog):
             return
 
         enabled_domains = self._enabled_domains(guild_id)
-        new_content, extra_files = await self._process_content(
+        new_content, extra_files, embeds = await self._process_content(
             message.content, enabled_domains
         )
-        if new_content == message.content and not extra_files:
+        if new_content == message.content and not extra_files and not embeds:
             return
 
         try:
@@ -191,6 +291,7 @@ class VxTCog(commands.Cog):
                 "username": message.author.display_name,
                 "avatar_url": message.author.display_avatar.url,
                 "files": files,
+                "embeds": embeds,
             }
             if isinstance(message.channel, discord.Thread):
                 send_kwargs["thread"] = message.channel
