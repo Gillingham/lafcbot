@@ -80,8 +80,13 @@ class InstagramClient:
         self._post_cache[shortcode] = post
         return post
 
-    async def download(self, url: str) -> bytes | None:
-        """Download raw bytes from an Instagram CDN URL, or None on failure."""
+    async def download(self, url: str, max_size: int | None = None) -> bytes | None:
+        """Download raw bytes from an Instagram CDN URL, or None on failure.
+
+        If `max_size` is given, returns None instead of bytes that wouldn't
+        fit as a Discord attachment (checked via Content-Length up front
+        where available, and against the actual body otherwise).
+        """
         if self._session is None:
             self._session = aiohttp.ClientSession()
 
@@ -91,7 +96,22 @@ class InstagramClient:
                 if response.status != 200:
                     logger.warning(f"Instagram CDN fetch returned {response.status}")
                     return None
-                return await response.read()
+                if (
+                    max_size is not None
+                    and response.content_length is not None
+                    and response.content_length > max_size
+                ):
+                    logger.warning(
+                        f"Instagram media too large to attach ({response.content_length} bytes)"
+                    )
+                    return None
+                data = await response.read()
+                if max_size is not None and len(data) > max_size:
+                    logger.warning(
+                        f"Instagram media too large to attach ({len(data)} bytes)"
+                    )
+                    return None
+                return data
         except (aiohttp.ClientError, TimeoutError) as e:
             logger.warning(f"Failed to download Instagram media: {e}")
             return None

@@ -82,7 +82,7 @@ class VxTCog(commands.Cog):
         return domains
 
     async def _replace_domain(
-        self, match: re.Match, enabled_domains: set[str]
+        self, match: re.Match, enabled_domains: set[str], filesize_limit: int
     ) -> tuple[str, list[discord.File], list[discord.Embed]]:
         """Rebuild a matched URL with its embed-fixing domain substituted in,
         leaving the URL untouched if its domain isn't enabled for this guild.
@@ -107,45 +107,61 @@ class VxTCog(commands.Cog):
             post = await self.instagram_client.get_post(post_match.group(1))
             if post:
                 shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
-                files = await self._carousel_files(shown_slides)
+                files = await self._carousel_files(shown_slides, filesize_limit)
 
-                # Angle-bracket the link so Discord doesn't also generate
-                # its own preview from the raw URL - we already provide
-                # richer content below.
-                link = f"<{match.group(0)}>"
-                if len(post.slides) > MAX_CAROUSEL_SLIDES:
-                    link += f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
+                # files is None when the primary video is too large to
+                # attach - without it there's nothing to show, so fall
+                # back to the plain kkinstagram link below.
+                if files is not None:
+                    # Angle-bracket the link so Discord doesn't also
+                    # generate its own preview from the raw URL - we
+                    # already provide richer content below.
+                    link = f"<{match.group(0)}>"
+                    if len(post.slides) > MAX_CAROUSEL_SLIDES:
+                        link += (
+                            f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
+                        )
 
-                if shown_slides[0].is_video:
-                    # The attached video already renders as its own
-                    # native player; an embed on top could only show a
-                    # static thumbnail, which would just duplicate it.
-                    # Put the caption/stats as plain text instead.
-                    text = self._format_caption_text(link, post)
-                    return text, files, []
+                    if shown_slides[0].is_video:
+                        # The attached video already renders as its own
+                        # native player; an embed on top could only show a
+                        # static thumbnail, which would just duplicate it.
+                        # Put the caption/stats as plain text instead.
+                        text = self._format_caption_text(link, post)
+                        return text, files, []
 
-                embed = self._build_embed(post)
-                return link, files, [embed]
+                    embed = self._build_embed(post)
+                    return link, files, [embed]
 
         return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
 
     async def _carousel_files(
-        self, shown_slides: list[MediaSlide]
-    ) -> list[discord.File]:
+        self, shown_slides: list[MediaSlide], filesize_limit: int
+    ) -> list[discord.File] | None:
         """Download the files needed alongside the embed card: the first
         slide's video (if it's a video - the embed can only show a static
         thumbnail for it), plus any remaining carousel slides.
+
+        Returns None if the first slide is a video too large to attach -
+        callers should fall back to the plain kkinstagram link, since
+        without the primary video there'd be nothing to show. Oversized
+        non-primary slides are just skipped.
         """
         files = []
 
         first = shown_slides[0]
         if first.is_video:
-            data = await self.instagram_client.download(first.url)
-            if data is not None:
-                files.append(discord.File(io.BytesIO(data), filename="slide_1.mp4"))
+            data = await self.instagram_client.download(
+                first.url, max_size=filesize_limit
+            )
+            if data is None:
+                return None
+            files.append(discord.File(io.BytesIO(data), filename="slide_1.mp4"))
 
         for i, slide in enumerate(shown_slides[1:], start=2):
-            data = await self.instagram_client.download(slide.url)
+            data = await self.instagram_client.download(
+                slide.url, max_size=filesize_limit
+            )
             if data is None:
                 continue
             ext = "mp4" if slide.is_video else "jpg"
@@ -214,7 +230,7 @@ class VxTCog(commands.Cog):
         return "\n".join(lines)
 
     async def _process_content(
-        self, content: str, enabled_domains: set[str]
+        self, content: str, enabled_domains: set[str], filesize_limit: int
     ) -> tuple[str, list[discord.File], list[discord.Embed]]:
         """Rewrite all matched links in a message's content, awaiting the
         per-match domain replacement (which may need to hit the network),
@@ -228,7 +244,7 @@ class VxTCog(commands.Cog):
         for match in self.url_pattern.finditer(content):
             pieces.append(content[last_end : match.start()])
             replacement, files, match_embeds = await self._replace_domain(
-                match, enabled_domains
+                match, enabled_domains, filesize_limit
             )
             pieces.append(replacement)
             extra_files.extend(files)
@@ -279,7 +295,7 @@ class VxTCog(commands.Cog):
 
         enabled_domains = self._enabled_domains(guild_id)
         new_content, extra_files, embeds = await self._process_content(
-            message.content, enabled_domains
+            message.content, enabled_domains, message.guild.filesize_limit
         )
         if new_content == message.content and not extra_files and not embeds:
             return

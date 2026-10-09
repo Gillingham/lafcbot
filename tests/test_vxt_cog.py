@@ -50,7 +50,9 @@ async def test_disabled_domain_passes_through_unchanged():
     content = "check this out https://instagram.com/p/ABC123"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"twitter.com", "x.com"}
+        content,
+        enabled_domains={"twitter.com", "x.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == content
@@ -65,7 +67,9 @@ async def test_single_instagram_post_falls_back_to_plain_link_when_scrape_fails(
     content = "https://instagram.com/p/ABC123"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == "https://kkinstagram.com/p/ABC123"
@@ -89,7 +93,9 @@ async def test_single_image_post_builds_embed_with_no_extra_files():
     content = "https://instagram.com/p/ABC123"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == f"<{content}>"
@@ -118,7 +124,9 @@ async def test_single_video_post_skips_embed_and_uses_plain_caption_text():
     content = "https://instagram.com/reel/XYZ789/"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == (
@@ -130,6 +138,32 @@ async def test_single_video_post_skips_embed_and_uses_plain_caption_text():
     assert files[0].filename == "slide_1.mp4"
     assert embeds == []
     cog.instagram_client.get_post.assert_awaited_once_with("XYZ789")
+
+
+@pytest.mark.asyncio
+async def test_oversized_video_falls_back_to_plain_link():
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/vid.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.instagram_client.download = AsyncMock(return_value=None)
+    content = "https://instagram.com/reel/XYZ789/"
+
+    new_content, files, embeds = await cog._process_content(
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
+    )
+
+    assert new_content == "https://kkinstagram.com/reel/XYZ789/"
+    assert files == []
+    assert embeds == []
 
 
 @pytest.mark.asyncio
@@ -147,7 +181,9 @@ async def test_reel_with_trailing_query_string_is_handled():
     content = "https://www.instagram.com/reel/DePe8g3JuEh/?xtok=abc123"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content.startswith(f"<{content}>")
@@ -181,7 +217,9 @@ async def test_carousel_post_attaches_remaining_slides():
     content = "https://instagram.com/p/DePKmIWDO2Z"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == f"<{content}>"
@@ -207,7 +245,9 @@ async def test_carousel_over_limit_notes_overflow_and_caps_attachments():
     content = "https://instagram.com/p/DePKmIWDO2Z"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert len(files) == 9
@@ -228,7 +268,9 @@ async def test_missing_metadata_omits_author_and_falls_back_footer():
     content = "https://instagram.com/p/DePKmIWDO2Z"
 
     _, _, embeds = await cog._process_content(
-        content, enabled_domains={"instagram.com"}
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     embed = embeds[0]
@@ -243,7 +285,9 @@ async def test_other_domains_unaffected_by_instagram_logic():
     content = "https://x.com/someuser/status/123 and https://tiktok.com/@user/video/456"
 
     new_content, files, embeds = await cog._process_content(
-        content, enabled_domains={"twitter.com", "x.com", "tiktok.com"}
+        content,
+        enabled_domains={"twitter.com", "x.com", "tiktok.com"},
+        filesize_limit=25 * 1024 * 1024,
     )
 
     assert new_content == (
