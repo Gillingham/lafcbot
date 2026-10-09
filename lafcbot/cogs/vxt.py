@@ -99,31 +99,33 @@ class VxTCog(commands.Cog):
 
         if domain == "instagram.com":
             post_match = INSTAGRAM_POST_PATH.match(rest)
-            if post_match:
-                post = await self.instagram_client.get_post(post_match.group(1))
-                if post:
-                    shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
-                    files = await self._carousel_files(shown_slides)
+            if not post_match:
+                # Not a /p/ or /reel/ link (e.g. a profile page) - nothing
+                # for us to fix, so leave it untouched.
+                return match.group(0), [], []
 
-                    # Angle-bracket the link so Discord doesn't also generate
-                    # its own preview from the raw URL - we already provide
-                    # richer content below.
-                    link = f"<{match.group(0)}>"
-                    if len(post.slides) > MAX_CAROUSEL_SLIDES:
-                        link += (
-                            f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
-                        )
+            post = await self.instagram_client.get_post(post_match.group(1))
+            if post:
+                shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
+                files = await self._carousel_files(shown_slides)
 
-                    if shown_slides[0].is_video:
-                        # The attached video already renders as its own
-                        # native player; an embed on top could only show a
-                        # static thumbnail, which would just duplicate it.
-                        # Put the caption/stats as plain text instead.
-                        text = self._format_caption_text(link, post)
-                        return text, files, []
+                # Angle-bracket the link so Discord doesn't also generate
+                # its own preview from the raw URL - we already provide
+                # richer content below.
+                link = f"<{match.group(0)}>"
+                if len(post.slides) > MAX_CAROUSEL_SLIDES:
+                    link += f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
 
-                    embed = self._build_embed(post)
-                    return link, files, [embed]
+                if shown_slides[0].is_video:
+                    # The attached video already renders as its own
+                    # native player; an embed on top could only show a
+                    # static thumbnail, which would just duplicate it.
+                    # Put the caption/stats as plain text instead.
+                    text = self._format_caption_text(link, post)
+                    return text, files, []
+
+                embed = self._build_embed(post)
+                return link, files, [embed]
 
         return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
 
