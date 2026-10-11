@@ -8,6 +8,8 @@ import discord
 from discord.ext import commands
 
 from lafcbot.clients.instagram_client import InstagramClient, InstagramPost, MediaSlide
+from lafcbot.utils.video import process_video
+from lafcbot.utils.video_cache import VideoCache
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,9 @@ MAX_CAPTION_LENGTH = 300
 # can build a rich card with caption/stats and full carousel support - capped
 # at Discord's 10-attachments-per-message limit for extra carousel slides.
 MAX_CAROUSEL_SLIDES = 10
+
+# Maximum raw video size to download before attempting compression/clipping (100 MB).
+MAX_RAW_VIDEO_DOWNLOAD_SIZE = 100 * 1024 * 1024
 
 DOMAIN_MAP = {
     "twitter.com": "fxtwitter.com",
@@ -40,10 +45,11 @@ class VxTCog(commands.Cog):
     reposting it via a webhook with the embed-fixing domain substituted in.
     """
 
-    def __init__(self, bot):
+    def __init__(self, bot, video_cache: VideoCache | None = None):
         self.bot = bot
         self._webhook_cache: dict[int, discord.Webhook] = {}
         self.instagram_client = InstagramClient()
+        self.video_cache = video_cache or VideoCache()
 
         # Load per-server configuration
         from lafcbot.utils.config import load_config
@@ -106,25 +112,26 @@ class VxTCog(commands.Cog):
                 # for us to fix, so leave it untouched.
                 return match.group(0), [], []
 
-            post = await self.instagram_client.get_post(post_match.group(1))
+            shortcode = post_match.group(1)
+            post = await self.instagram_client.get_post(shortcode)
             if post:
                 shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
                 # Angle-bracket the link so Discord doesn't also generate its
                 # own preview from the raw URL - we provide richer content.
                 link = f"<{match.group(0)}>"
                 if len(post.slides) > MAX_CAROUSEL_SLIDES:
-                    link += (
-                        f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
-                    )
+                    link += f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
 
-                files = await self._carousel_files(shown_slides, filesize_limit)
+                files, is_clipped = await self._carousel_files(
+                    shown_slides, filesize_limit, shortcode=shortcode
+                )
 
                 if files is not None and shown_slides[0].is_video:
                     # The attached video already renders as its own native
                     # player; an embed on top could only show a static
                     # thumbnail, which would just duplicate it. Put the
                     # caption/stats as plain text instead.
-                    text = self._format_caption_text(link, post)
+                    text = self._format_caption_text(link, post, is_clipped=is_clipped)
                     return text, files, []
 
                 # Show an embed card. If the first slide's video was too large
@@ -143,38 +150,108 @@ class VxTCog(commands.Cog):
         return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
 
     async def _carousel_files(
-        self, shown_slides: list[MediaSlide], filesize_limit: int
-    ) -> list[discord.File] | None:
+        self,
+        shown_slides: list[MediaSlide],
+        filesize_limit: int,
+        shortcode: str | None = None,
+    ) -> tuple[list[discord.File] | None, bool]:
         """Download the files needed alongside the embed card: the first
         slide's video (if it's a video - the embed can only show a static
         thumbnail for it), plus any remaining carousel slides.
 
-        Returns None if the first slide is a video too large to attach -
-        callers should fall back to the plain kkinstagram link, since
-        without the primary video there'd be nothing to show. Oversized
-        non-primary slides are just skipped.
+        Uses video_cache to avoid re-downloading/re-transcoding previously seen
+        videos, and process_video to compress or clip oversized videos to fit
+        within filesize_limit.
+
+        Returns (files, is_clipped). Returns (None, False) if the first slide
+        is a video that could not be downloaded or processed to fit within
+        filesize_limit - callers fall back to the thumbnail embed card.
+        Oversized non-primary slides that fail to fit are skipped.
         """
         files = []
+        is_clipped = False
+        max_video_download = max(MAX_RAW_VIDEO_DOWNLOAD_SIZE, filesize_limit)
 
         first = shown_slides[0]
         if first.is_video:
-            data = await self.instagram_client.download(
-                first.url, max_size=filesize_limit
-            )
-            if data is None:
-                return None
-            files.append(discord.File(io.BytesIO(data), filename="slide_1.mp4"))
+            cached = None
+            if shortcode:
+                cached = await self.video_cache.get(
+                    shortcode=shortcode, slide_index=1, max_size=filesize_limit
+                )
+
+            if cached is not None:
+                video_data, is_clipped = cached
+                files.append(
+                    discord.File(io.BytesIO(video_data), filename="slide_1.mp4")
+                )
+            else:
+                raw_data = await self.instagram_client.download(
+                    first.url, max_size=max_video_download
+                )
+                if raw_data is None:
+                    return None, False
+
+                result = await process_video(raw_data, max_size=filesize_limit)
+                if result is None:
+                    return None, False
+
+                video_data, is_clipped = result
+                if shortcode:
+                    await self.video_cache.set(
+                        shortcode=shortcode,
+                        slide_index=1,
+                        max_size=filesize_limit,
+                        data=video_data,
+                        is_clipped=is_clipped,
+                    )
+                files.append(
+                    discord.File(io.BytesIO(video_data), filename="slide_1.mp4")
+                )
 
         for i, slide in enumerate(shown_slides[1:], start=2):
-            data = await self.instagram_client.download(
-                slide.url, max_size=filesize_limit
-            )
-            if data is None:
-                continue
-            ext = "mp4" if slide.is_video else "jpg"
-            files.append(discord.File(io.BytesIO(data), filename=f"slide_{i}.{ext}"))
+            if slide.is_video:
+                cached = None
+                if shortcode:
+                    cached = await self.video_cache.get(
+                        shortcode=shortcode, slide_index=i, max_size=filesize_limit
+                    )
 
-        return files
+                if cached is not None:
+                    video_data, _ = cached
+                    files.append(
+                        discord.File(io.BytesIO(video_data), filename=f"slide_{i}.mp4")
+                    )
+                else:
+                    raw_data = await self.instagram_client.download(
+                        slide.url, max_size=max_video_download
+                    )
+                    if raw_data is None:
+                        continue
+                    result = await process_video(raw_data, max_size=filesize_limit)
+                    if result is None:
+                        continue
+                    video_data, slide_clipped = result
+                    if shortcode:
+                        await self.video_cache.set(
+                            shortcode=shortcode,
+                            slide_index=i,
+                            max_size=filesize_limit,
+                            data=video_data,
+                            is_clipped=slide_clipped,
+                        )
+                    files.append(
+                        discord.File(io.BytesIO(video_data), filename=f"slide_{i}.mp4")
+                    )
+            else:
+                data = await self.instagram_client.download(
+                    slide.url, max_size=filesize_limit
+                )
+                if data is None:
+                    continue
+                files.append(discord.File(io.BytesIO(data), filename=f"slide_{i}.jpg"))
+
+        return files, is_clipped
 
     @staticmethod
     def _truncate_caption(caption: str | None) -> str | None:
@@ -214,7 +291,9 @@ class VxTCog(commands.Cog):
         return embed
 
     @staticmethod
-    def _format_caption_text(link: str, post: InstagramPost) -> str:
+    def _format_caption_text(
+        link: str, post: InstagramPost, is_clipped: bool = False
+    ) -> str:
         """Format author/caption/stats as plain text, for posts whose video
         attachment already needs its own native player (no embed on top).
         """
@@ -233,6 +312,9 @@ class VxTCog(commands.Cog):
         caption = VxTCog._truncate_caption(post.caption)
         if caption:
             lines.append(caption)
+
+        if is_clipped:
+            lines.append("*(preview - full video exceeds Discord file size limit)*")
 
         return "\n".join(lines)
 
@@ -356,9 +438,8 @@ class VxTCog(commands.Cog):
 
         guild_id = str(ctx.guild.id)
         server_settings = self.server_settings.get(guild_id)
-        is_enabled = server_settings is not None
 
-        if is_enabled:
+        if server_settings is not None:
             instagram_status = (
                 "enabled" if server_settings.get("instagram_enabled") else "disabled"
             )

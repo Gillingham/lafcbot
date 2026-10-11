@@ -1,0 +1,184 @@
+"""Tests for video processing and hybrid compression/clipping utilities."""
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from lafcbot.utils.video import (
+    clip_video,
+    compress_video,
+    probe_duration,
+    process_video,
+)
+
+
+@pytest.mark.asyncio
+async def test_process_video_fast_path():
+    """When video already fits within max_size, it returns immediately without processing."""
+    data = b"small-video-bytes"
+    result = await process_video(data, max_size=1024)
+    assert result == (data, False)
+
+
+@pytest.mark.asyncio
+async def test_process_video_returns_none_when_binaries_missing():
+    """When ffmpeg or ffprobe is not installed, process_video gracefully returns None."""
+    data = b"large-video-data" * 100
+    with patch("shutil.which", return_value=None):
+        result = await process_video(data, max_size=10)
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_probe_duration_parsing():
+    """probe_duration parses valid JSON duration from ffprobe."""
+    with patch(
+        "lafcbot.utils.video._run_command",
+        new=AsyncMock(
+            return_value=(
+                0,
+                b'{"format": {"duration": "45.500000"}}',
+                b"",
+            )
+        ),
+    ):
+        duration = await probe_duration("/dummy/path.mp4")
+        assert duration == 45.5
+
+
+@pytest.mark.asyncio
+async def test_probe_duration_invalid_json():
+    """probe_duration returns None on invalid or empty JSON."""
+    with patch(
+        "lafcbot.utils.video._run_command",
+        new=AsyncMock(return_value=(0, b"not-json", b"")),
+    ):
+        duration = await probe_duration("/dummy/path.mp4")
+        assert duration is None
+
+
+@pytest.mark.asyncio
+async def test_probe_duration_command_error():
+    """probe_duration returns None when ffprobe exits with non-zero code."""
+    with patch(
+        "lafcbot.utils.video._run_command",
+        new=AsyncMock(return_value=(1, b"", b"error")),
+    ):
+        duration = await probe_duration("/dummy/path.mp4")
+        assert duration is None
+
+
+@pytest.mark.asyncio
+async def test_compress_video_skips_when_duration_too_long_for_target():
+    """compress_video returns False if calculated bitrate would be below threshold."""
+    # 1000 bytes over 60 seconds gives ~133 bps, way below 150_000 bps minimum
+    success = await compress_video(
+        input_path="/dummy/in.mp4",
+        output_path="/dummy/out.mp4",
+        target_size_bytes=1000,
+        duration=60.0,
+    )
+    assert success is False
+
+
+@pytest.mark.asyncio
+async def test_clip_video_skips_on_invalid_duration():
+    """clip_video returns False if clip duration is zero or negative."""
+    success = await clip_video(
+        input_path="/dummy/in.mp4",
+        output_path="/dummy/out.mp4",
+        target_size_bytes=1024 * 1024,
+        clip_duration=0,
+    )
+    assert success is False
+
+
+@pytest.mark.asyncio
+async def test_process_video_hybrid_compresses_short_video():
+    """Oversized video under 90s is fully compressed without clipping."""
+    data = b"x" * 2000
+    compressed_bytes = b"compressed-video"
+
+    async def fake_compress(input_path, output_path, target_size_bytes, duration):
+        with open(output_path, "wb") as f:
+            f.write(compressed_bytes)
+        return True
+
+    with (
+        patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=30.0)),
+        patch("lafcbot.utils.video.compress_video", side_effect=fake_compress),
+    ):
+        result = await process_video(data, max_size=1000)
+        assert result is not None
+        out_bytes, is_clipped = result
+        assert is_clipped is False
+        assert out_bytes == compressed_bytes
+
+
+@pytest.mark.asyncio
+async def test_process_video_hybrid_clips_long_video():
+    """Oversized video over 90s is clipped to preview rather than fully compressed."""
+    data = b"x" * 2000
+    clipped_bytes = b"clipped-preview-video"
+
+    async def fake_clip(input_path, output_path, target_size_bytes, clip_duration):
+        with open(output_path, "wb") as f:
+            f.write(clipped_bytes)
+        return True
+
+    with (
+        patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=120.0)),
+        patch(
+            "lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)
+        ) as mock_compress,
+        patch("lafcbot.utils.video.clip_video", side_effect=fake_clip) as mock_clip,
+    ):
+        result = await process_video(data, max_size=1000)
+        assert result is not None
+        out_bytes, is_clipped = result
+        assert is_clipped is True
+        assert out_bytes == clipped_bytes
+        # Full compression shouldn't even be called for > 90s duration
+        mock_compress.assert_not_called()
+        mock_clip.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_video_hybrid_clips_when_compression_fails():
+    """When full compression fails on <= 90s video, clipping is attempted as fallback."""
+    data = b"x" * 2000
+    clipped_bytes = b"clipped-fallback-video"
+
+    async def fake_clip(input_path, output_path, target_size_bytes, clip_duration):
+        with open(output_path, "wb") as f:
+            f.write(clipped_bytes)
+        return True
+
+    with (
+        patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=60.0)),
+        patch(
+            "lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)
+        ) as mock_compress,
+        patch("lafcbot.utils.video.clip_video", side_effect=fake_clip) as mock_clip,
+    ):
+        result = await process_video(data, max_size=1000)
+        assert result is not None
+        out_bytes, is_clipped = result
+        assert is_clipped is True
+        assert out_bytes == clipped_bytes
+        mock_compress.assert_called_once()
+        mock_clip.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_video_returns_none_when_both_fail():
+    """When both full compression and clipping fail, process_video returns None."""
+    data = b"x" * 2000
+
+    with (
+        patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=60.0)),
+        patch("lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)),
+        patch("lafcbot.utils.video.clip_video", new=AsyncMock(return_value=False)),
+    ):
+        result = await process_video(data, max_size=1000)
+        assert result is None

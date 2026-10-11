@@ -23,6 +23,9 @@ def _make_cog(post: InstagramPost | None = None) -> VxTCog:
     cog.instagram_client = AsyncMock()
     cog.instagram_client.get_post = AsyncMock(return_value=post)
     cog.instagram_client.download = AsyncMock(return_value=b"binary-data")
+    cog.video_cache = AsyncMock()
+    cog.video_cache.get = AsyncMock(return_value=None)
+    cog.video_cache.set = AsyncMock()
     return cog
 
 
@@ -297,3 +300,176 @@ async def test_other_domains_unaffected_by_instagram_logic():
     assert files == []
     assert embeds == []
     cog.instagram_client.get_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_oversized_video_compressed_attaches_full_video():
+    """When an oversized video is compressed to fit, the full video is attached without preview notice."""
+    from unittest.mock import patch
+
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/large.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.instagram_client.download = AsyncMock(return_value=b"large-raw-video")
+
+    with patch(
+        "lafcbot.cogs.vxt.process_video",
+        new=AsyncMock(return_value=(b"compressed-video", False)),
+    ):
+        content = "https://instagram.com/reel/XYZ789/"
+        new_content, files, embeds = await cog._process_content(
+            content,
+            enabled_domains={"instagram.com"},
+            filesize_limit=10 * 1024 * 1024,
+        )
+
+        assert len(files) == 1
+        assert files[0].filename == "slide_1.mp4"
+        assert embeds == []
+        assert "preview" not in new_content
+        assert "@a_guy_called_marc" in new_content
+
+
+@pytest.mark.asyncio
+async def test_oversized_video_clipped_attaches_preview_with_notice():
+    """When an oversized video is clipped, the preview video is attached with preview notice."""
+    from unittest.mock import patch
+
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/long.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.instagram_client.download = AsyncMock(return_value=b"long-raw-video")
+
+    with patch(
+        "lafcbot.cogs.vxt.process_video",
+        new=AsyncMock(return_value=(b"clipped-preview-video", True)),
+    ):
+        content = "https://instagram.com/reel/XYZ789/"
+        new_content, files, embeds = await cog._process_content(
+            content,
+            enabled_domains={"instagram.com"},
+            filesize_limit=10 * 1024 * 1024,
+        )
+
+        assert len(files) == 1
+        assert files[0].filename == "slide_1.mp4"
+        assert embeds == []
+        assert "*(preview - full video exceeds Discord file size limit)*" in new_content
+
+
+@pytest.mark.asyncio
+async def test_oversized_video_processing_failure_falls_back_to_embed():
+    """When video compression/clipping fails, VxTCog falls back to the embed card with thumbnail."""
+    from unittest.mock import patch
+
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/unfixable.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.instagram_client.download = AsyncMock(return_value=b"unfixable-video")
+
+    with patch("lafcbot.cogs.vxt.process_video", new=AsyncMock(return_value=None)):
+        content = "https://instagram.com/reel/XYZ789/"
+        new_content, files, embeds = await cog._process_content(
+            content,
+            enabled_domains={"instagram.com"},
+            filesize_limit=10 * 1024 * 1024,
+        )
+
+        assert files == []
+        assert len(embeds) == 1
+        assert embeds[0].image.url == "https://cdn.example.com/thumb.jpg"
+
+
+@pytest.mark.asyncio
+async def test_relinked_video_served_from_cache_without_download_or_encode():
+    """When a video is already cached, it is served from cache without downloading or re-encoding."""
+    from unittest.mock import patch
+
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/cached.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.video_cache.get = AsyncMock(return_value=(b"cached-transcode-data", False))
+
+    with patch("lafcbot.cogs.vxt.process_video") as mock_process:
+        content = "https://instagram.com/reel/CACHED123/"
+        new_content, files, embeds = await cog._process_content(
+            content,
+            enabled_domains={"instagram.com"},
+            filesize_limit=10 * 1024 * 1024,
+        )
+
+        assert len(files) == 1
+        assert files[0].filename == "slide_1.mp4"
+        assert embeds == []
+        cog.video_cache.get.assert_awaited_once_with(
+            shortcode="CACHED123", slide_index=1, max_size=10 * 1024 * 1024
+        )
+        cog.instagram_client.download.assert_not_called()
+        mock_process.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_stores_transcoded_result():
+    """When a video is not in cache, the processed video is stored into cache."""
+    from unittest.mock import patch
+
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/uncached.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    cog.video_cache.get = AsyncMock(return_value=None)
+    cog.instagram_client.download = AsyncMock(return_value=b"raw-bytes")
+
+    with patch(
+        "lafcbot.cogs.vxt.process_video",
+        new=AsyncMock(return_value=(b"new-encoded-bytes", True)),
+    ):
+        content = "https://instagram.com/reel/NEW123/"
+        new_content, files, embeds = await cog._process_content(
+            content,
+            enabled_domains={"instagram.com"},
+            filesize_limit=10 * 1024 * 1024,
+        )
+
+        assert len(files) == 1
+        cog.video_cache.set.assert_awaited_once_with(
+            shortcode="NEW123",
+            slide_index=1,
+            max_size=10 * 1024 * 1024,
+            data=b"new-encoded-bytes",
+            is_clipped=True,
+        )
