@@ -9,6 +9,8 @@ import pytest
 from lafcbot.utils.video import (
     clip_video,
     compress_video,
+    get_best_encoder,
+    get_candidate_encoders,
     probe_duration,
     process_video,
 )
@@ -203,3 +205,115 @@ async def test_process_video_returns_none_when_both_fail():
     ):
         result = await process_video(data, max_size=1000)
         assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_best_encoder_prefers_nvidia():
+    """When NVIDIA NVENC probe succeeds, nvidia_nvenc is selected first."""
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(return_value=(0, b"", b"")),
+        ) as mock_run,
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "nvidia_nvenc"
+        mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_best_encoder_selects_amd_when_nvidia_unavailable():
+    """When NVIDIA fails and AMD VAAPI succeeds, amd_vaapi is selected."""
+    # Candidate order: 1. nvidia_nvenc (fails), 2. amd_amf (fails), 3. amd_vaapi (succeeds)
+    side_effects = [
+        (1, b"", b"nvenc failed"),
+        (1, b"", b"amf failed"),
+        (0, b"", b""),
+    ]
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(side_effect=side_effects),
+        ),
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "amd_vaapi"
+
+
+@pytest.mark.asyncio
+async def test_get_best_encoder_selects_intel_qsv_when_nvidia_and_amd_unavailable():
+    """When NVIDIA and AMD fail and Intel QSV succeeds, intel_qsv is selected."""
+    # Candidate order: 1. nvidia_nvenc (fails), 2. amd_amf (fails), 3. amd_vaapi (fails), 4. intel_qsv (succeeds)
+    side_effects = [
+        (1, b"", b"nvenc failed"),
+        (1, b"", b"amf failed"),
+        (1, b"", b"vaapi failed"),
+        (0, b"", b""),
+    ]
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(side_effect=side_effects),
+        ),
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "intel_qsv"
+
+
+@pytest.mark.asyncio
+async def test_get_best_encoder_falls_back_to_software():
+    """When all hardware encoders fail, software_libx264 is selected."""
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(return_value=(1, b"", b"hw failed")),
+        ),
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "software_libx264"
+
+
+@pytest.mark.asyncio
+async def test_compress_video_falls_back_to_software_when_hardware_fails(tmp_path):
+    """If the chosen hardware encoder fails at runtime, compress_video retries with software libx264."""
+    in_file = tmp_path / "in.mp4"
+    out_file = tmp_path / "out.mp4"
+    in_file.write_bytes(b"raw")
+
+    nvenc_config = get_candidate_encoders()[0]
+    assert nvenc_config.name == "nvidia_nvenc"
+
+    call_count = 0
+
+    async def fake_run(cmd, timeout):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First call is with hardware encoder -> fails
+            assert "h264_nvenc" in cmd
+            return 1, b"", b"gpu error"
+        # Second call is software fallback -> succeeds and writes output file
+        assert "libx264" in cmd
+        out_file.write_bytes(b"fallback-compressed-data")
+        return 0, b"", b""
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video.get_best_encoder",
+            new=AsyncMock(return_value=nvenc_config),
+        ),
+        patch("lafcbot.utils.video._run_command", side_effect=fake_run),
+    ):
+        success = await compress_video(
+            input_path=in_file,
+            output_path=out_file,
+            target_size_bytes=10 * 1024 * 1024,
+            duration=15.0,
+        )
+        assert success is True
+        assert call_count == 2
