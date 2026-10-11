@@ -243,13 +243,33 @@ async def test_get_best_encoder_selects_amd_when_nvidia_unavailable():
 
 
 @pytest.mark.asyncio
-async def test_get_best_encoder_selects_intel_qsv_when_nvidia_and_amd_unavailable():
-    """When NVIDIA and AMD fail and Intel QSV succeeds, intel_qsv is selected."""
-    # Candidate order: 1. nvidia_nvenc (fails), 2. amd_amf (fails), 3. amd_vaapi (fails), 4. intel_qsv (succeeds)
+async def test_get_best_encoder_selects_vulkan_when_vaapi_unavailable():
+    """When NVIDIA, AMF, and VA-API fail and Vulkan Video succeeds, vulkan is selected."""
     side_effects = [
         (1, b"", b"nvenc failed"),
         (1, b"", b"amf failed"),
         (1, b"", b"vaapi failed"),
+        (0, b"", b""),
+    ]
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(side_effect=side_effects),
+        ),
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "vulkan"
+
+
+@pytest.mark.asyncio
+async def test_get_best_encoder_selects_intel_qsv_when_nvidia_and_amd_unavailable():
+    """When NVIDIA and AMD (AMF, VAAPI, Vulkan) fail and Intel QSV succeeds, intel_qsv is selected."""
+    side_effects = [
+        (1, b"", b"nvenc failed"),
+        (1, b"", b"amf failed"),
+        (1, b"", b"vaapi failed"),
+        (1, b"", b"vulkan failed"),
         (0, b"", b""),
     ]
     with (

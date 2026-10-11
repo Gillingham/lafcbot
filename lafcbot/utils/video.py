@@ -53,8 +53,9 @@ def get_candidate_encoders() -> list[EncoderConfig]:
     1. NVIDIA (NVENC)
     2. AMD AMF (Advanced Media Framework)
     3. AMD / Intel Linux VA-API (/dev/dri/renderD128)
-    4. Intel QuickSync Video (QSV)
-    5. Software fallback (libx264)
+    4. AMD / Vulkan Video (h264_vulkan)
+    5. Intel QuickSync Video (QSV)
+    6. Software fallback (libx264)
     """
     return [
         # 1. NVIDIA NVENC (highest preference)
@@ -105,7 +106,25 @@ def get_candidate_encoders() -> list[EncoderConfig]:
                 "h264_vaapi",
             ],
         ),
-        # 4. Intel QuickSync Video (QSV)
+        # 4. AMD / Vulkan Video (RHEL 10 RADV / Vulkan hardware encoding)
+        EncoderConfig(
+            name="vulkan",
+            extra_input_args=[
+                "-init_hw_device",
+                "vulkan=vk:0",
+                "-filter_hw_device",
+                "vk",
+            ],
+            video_codec_args=["-c:v", "h264_vulkan"],
+            scale_filter_template="scale='min({width},iw)':-2,format=nv12,hwupload",
+            probe_args=[
+                "-vf",
+                "format=nv12,hwupload",
+                "-c:v",
+                "h264_vulkan",
+            ],
+        ),
+        # 5. Intel QuickSync Video (QSV)
         EncoderConfig(
             name="intel_qsv",
             extra_input_args=[],
@@ -120,7 +139,7 @@ def get_candidate_encoders() -> list[EncoderConfig]:
             scale_filter_template="scale='min({width},iw)':-2",
             probe_args=["-c:v", "h264_qsv", "-preset", "veryfast", "-pix_fmt", "nv12"],
         ),
-        # 5. Universal software fallback
+        # 6. Universal software fallback
         get_software_encoder(),
     ]
 
@@ -129,7 +148,7 @@ _DETECTED_ENCODER: EncoderConfig | None = None
 
 
 async def get_best_encoder(force_refresh: bool = False) -> EncoderConfig:
-    """Probe hardware encoders in priority order (NVIDIA -> AMD -> Software) and cache the result."""
+    """Probe hardware encoders in priority order (NVIDIA -> AMD -> Intel -> Software) and cache the result."""
     global _DETECTED_ENCODER
     if _DETECTED_ENCODER is not None and not force_refresh:
         return _DETECTED_ENCODER
@@ -153,13 +172,20 @@ async def get_best_encoder(force_refresh: bool = False) -> EncoderConfig:
             "null",
             "-",
         ]
-        returncode, _, _ = await _run_command(probe_cmd, timeout=3.0)
+        returncode, _, stderr = await _run_command(probe_cmd, timeout=3.0)
         if returncode == 0:
             logger.info(
                 f"Hardware video acceleration detected and enabled: {candidate.name}"
             )
             _DETECTED_ENCODER = candidate
             return candidate
+        err_lines = [
+            line.strip()
+            for line in stderr.decode(errors="ignore").splitlines()
+            if line.strip()
+        ]
+        reason = err_lines[-1] if err_lines else f"exit code {returncode}"
+        logger.debug(f"Hardware encoder '{candidate.name}' unavailable: {reason}")
 
     logger.info("No functional hardware encoder detected; using software libx264")
     _DETECTED_ENCODER = get_software_encoder()
@@ -168,11 +194,14 @@ async def get_best_encoder(force_refresh: bool = False) -> EncoderConfig:
 
 async def _run_command(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
     """Run an external command asynchronously with a timeout."""
+    env = os.environ.copy()
+    env.setdefault("RADV_PERFTEST", "video_encode")
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode if proc.returncode is not None else 1, stdout, stderr
