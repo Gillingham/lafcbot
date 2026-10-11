@@ -72,7 +72,7 @@ async def test_single_instagram_post_falls_back_to_plain_link_when_scrape_fails(
         filesize_limit=25 * 1024 * 1024,
     )
 
-    assert new_content == "https://kkinstagram.com/p/ABC123"
+    assert new_content == "https://instagram.com/p/ABC123"
     assert files == []
     assert embeds == []
     cog.instagram_client.get_post.assert_awaited_once_with("ABC123")
@@ -141,7 +141,7 @@ async def test_single_video_post_skips_embed_and_uses_plain_caption_text():
 
 
 @pytest.mark.asyncio
-async def test_oversized_video_falls_back_to_plain_link():
+async def test_oversized_video_shows_embed_card_with_thumbnail():
     post = _make_post(
         slides=[
             MediaSlide(
@@ -161,9 +161,10 @@ async def test_oversized_video_falls_back_to_plain_link():
         filesize_limit=25 * 1024 * 1024,
     )
 
-    assert new_content == "https://kkinstagram.com/reel/XYZ789/"
+    assert new_content == f"<{content}>"
     assert files == []
-    assert embeds == []
+    assert len(embeds) == 1
+    assert embeds[0].image.url == "https://cdn.example.com/thumb.jpg"
 
 
 @pytest.mark.asyncio

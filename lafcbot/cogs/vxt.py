@@ -18,16 +18,14 @@ INSTAGRAM_COLOR = 0xE1306C
 # Keep the caption short, closer to a social-card summary than a full post.
 MAX_CAPTION_LENGTH = 300
 
-# kkinstagram can't render a rich card or multi-image/video carousels (its
-# /p/ route just 302s to a single representative image), so instead we scrape
-# the post ourselves and build the card directly - capped at Discord's
-# 10-attachments-per-message limit for any extra carousel slides.
+# Instagram posts are scraped directly via Instagram's embed endpoint so we
+# can build a rich card with caption/stats and full carousel support - capped
+# at Discord's 10-attachments-per-message limit for extra carousel slides.
 MAX_CAROUSEL_SLIDES = 10
 
 DOMAIN_MAP = {
     "twitter.com": "fxtwitter.com",
     "x.com": "fxtwitter.com",
-    "instagram.com": "kkinstagram.com",
     "tiktok.com": "tnktok.com",
 }
 
@@ -87,10 +85,14 @@ class VxTCog(commands.Cog):
         """Rebuild a matched URL with its embed-fixing domain substituted in,
         leaving the URL untouched if its domain isn't enabled for this guild.
 
-        For Instagram, scrapes the post ourselves and returns a rich embed
-        plus any extra files to attach (kkinstagram can only show a single
-        plain image/video, with no caption/stats). Falls back to the plain
-        kkinstagram link if the post couldn't be scraped.
+        For Instagram, scrapes the post directly via Instagram's embed endpoint
+        and returns a rich embed plus any extra files (carousel slides).
+
+        Falls back gracefully:
+        - If the post couldn't be scraped, the original URL is left untouched
+          so Discord can attempt its own preview.
+        - If the primary video is too large to attach, an embed card with the
+          thumbnail is still shown so the post isn't completely bare.
         """
         domain = match.group(1).lower()
         if domain not in enabled_domains:
@@ -107,31 +109,36 @@ class VxTCog(commands.Cog):
             post = await self.instagram_client.get_post(post_match.group(1))
             if post:
                 shown_slides = post.slides[:MAX_CAROUSEL_SLIDES]
+                # Angle-bracket the link so Discord doesn't also generate its
+                # own preview from the raw URL - we provide richer content.
+                link = f"<{match.group(0)}>"
+                if len(post.slides) > MAX_CAROUSEL_SLIDES:
+                    link += (
+                        f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
+                    )
+
                 files = await self._carousel_files(shown_slides, filesize_limit)
 
-                # files is None when the primary video is too large to
-                # attach - without it there's nothing to show, so fall
-                # back to the plain kkinstagram link below.
-                if files is not None:
-                    # Angle-bracket the link so Discord doesn't also
-                    # generate its own preview from the raw URL - we
-                    # already provide richer content below.
-                    link = f"<{match.group(0)}>"
-                    if len(post.slides) > MAX_CAROUSEL_SLIDES:
-                        link += (
-                            f" (showing {len(shown_slides)}/{len(post.slides)} slides)"
-                        )
+                if files is not None and shown_slides[0].is_video:
+                    # The attached video already renders as its own native
+                    # player; an embed on top could only show a static
+                    # thumbnail, which would just duplicate it. Put the
+                    # caption/stats as plain text instead.
+                    text = self._format_caption_text(link, post)
+                    return text, files, []
 
-                    if shown_slides[0].is_video:
-                        # The attached video already renders as its own
-                        # native player; an embed on top could only show a
-                        # static thumbnail, which would just duplicate it.
-                        # Put the caption/stats as plain text instead.
-                        text = self._format_caption_text(link, post)
-                        return text, files, []
+                # Show an embed card. If the first slide's video was too large
+                # to attach (files is None), we still build the card with its
+                # thumbnail so the post isn't left completely bare.
+                embed = self._build_embed(post)
+                return link, files or [], [embed]
 
-                    embed = self._build_embed(post)
-                    return link, files, [embed]
+            # Scraping failed - leave the original URL untouched so the message
+            # is unchanged and Discord can attempt its own preview.
+            logger.debug(
+                f"Instagram scrape failed for {match.group(0)!r}, leaving URL untouched"
+            )
+            return match.group(0), [], []
 
         return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
 

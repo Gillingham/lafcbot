@@ -71,7 +71,7 @@ class InstagramClient:
         """Return an Instagram post's media slides and display metadata.
 
         Returns None if the post's data couldn't be fetched or parsed -
-        callers should fall back to the plain kkinstagram link in that case.
+        callers should leave the original URL untouched in that case.
         """
         if shortcode in self._post_cache:
             return self._post_cache[shortcode]
