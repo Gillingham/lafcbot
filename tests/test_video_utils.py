@@ -1,5 +1,7 @@
 """Tests for video processing and hybrid compression/clipping utilities."""
 
+import os
+import shutil
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,6 +12,18 @@ from lafcbot.utils.video import (
     probe_duration,
     process_video,
 )
+
+HAS_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+IN_CI = os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
+
+# Skip ffmpeg-related tests when running in GitHub Actions CI or if binaries are not found
+pytestmark = [
+    pytest.mark.ffmpeg,
+    pytest.mark.skipif(
+        IN_CI or not HAS_FFMPEG,
+        reason="Skipping ffmpeg tests in GitHub Actions or when ffmpeg/ffprobe is not available",
+    ),
+]
 
 
 @pytest.mark.asyncio
@@ -32,14 +46,17 @@ async def test_process_video_returns_none_when_binaries_missing():
 @pytest.mark.asyncio
 async def test_probe_duration_parsing():
     """probe_duration parses valid JSON duration from ffprobe."""
-    with patch(
-        "lafcbot.utils.video._run_command",
-        new=AsyncMock(
-            return_value=(
-                0,
-                b'{"format": {"duration": "45.500000"}}',
-                b"",
-            )
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffprobe"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(
+                return_value=(
+                    0,
+                    b'{"format": {"duration": "45.500000"}}',
+                    b"",
+                )
+            ),
         ),
     ):
         duration = await probe_duration("/dummy/path.mp4")
@@ -105,6 +122,7 @@ async def test_process_video_hybrid_compresses_short_video():
         return True
 
     with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
         patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=30.0)),
         patch("lafcbot.utils.video.compress_video", side_effect=fake_compress),
     ):
@@ -127,6 +145,7 @@ async def test_process_video_hybrid_clips_long_video():
         return True
 
     with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
         patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=120.0)),
         patch(
             "lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)
@@ -155,6 +174,7 @@ async def test_process_video_hybrid_clips_when_compression_fails():
         return True
 
     with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
         patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=60.0)),
         patch(
             "lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)
@@ -176,6 +196,7 @@ async def test_process_video_returns_none_when_both_fail():
     data = b"x" * 2000
 
     with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
         patch("lafcbot.utils.video.probe_duration", new=AsyncMock(return_value=60.0)),
         patch("lafcbot.utils.video.compress_video", new=AsyncMock(return_value=False)),
         patch("lafcbot.utils.video.clip_video", new=AsyncMock(return_value=False)),
