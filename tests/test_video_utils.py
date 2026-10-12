@@ -284,6 +284,28 @@ async def test_get_best_encoder_selects_intel_qsv_when_nvidia_and_amd_unavailabl
 
 
 @pytest.mark.asyncio
+async def test_get_best_encoder_selects_videotoolbox_when_others_unavailable():
+    """When NVIDIA, AMD, and Intel fail and Apple VideoToolbox succeeds, apple_videotoolbox is selected."""
+    side_effects = [
+        (1, b"", b"nvenc failed"),
+        (1, b"", b"amf failed"),
+        (1, b"", b"vaapi failed"),
+        (1, b"", b"vulkan failed"),
+        (1, b"", b"qsv failed"),
+        (0, b"", b""),
+    ]
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "lafcbot.utils.video._run_command",
+            new=AsyncMock(side_effect=side_effects),
+        ),
+    ):
+        encoder = await get_best_encoder(force_refresh=True)
+        assert encoder.name == "apple_videotoolbox"
+
+
+@pytest.mark.asyncio
 async def test_get_best_encoder_falls_back_to_software():
     """When all hardware encoders fail, software_libx264 is selected."""
     with (

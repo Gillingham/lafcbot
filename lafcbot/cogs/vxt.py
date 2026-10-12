@@ -87,12 +87,16 @@ class VxTCog(commands.Cog):
 
     async def _replace_domain(
         self, match: re.Match, enabled_domains: set[str], filesize_limit: int
-    ) -> tuple[str, list[discord.File], list[discord.Embed]]:
+    ) -> tuple[str, list[discord.File], list[discord.Embed], str]:
         """Rebuild a matched URL with its embed-fixing domain substituted in,
         leaving the URL untouched if its domain isn't enabled for this guild.
 
         For Instagram, scrapes the post directly via Instagram's embed endpoint
         and returns a rich embed plus any extra files (carousel slides).
+
+        The 4th return value is caption/stats text to append after the full
+        message rather than splice in place of the link - the link stays
+        inline so any surrounding message text isn't clobbered.
 
         Falls back gracefully:
         - If the post couldn't be scraped, the original URL is left untouched
@@ -102,7 +106,7 @@ class VxTCog(commands.Cog):
         """
         domain = match.group(1).lower()
         if domain not in enabled_domains:
-            return match.group(0), [], []
+            return match.group(0), [], [], ""
         rest = match.group(2) or ""
 
         if domain == "instagram.com":
@@ -110,7 +114,7 @@ class VxTCog(commands.Cog):
             if not post_match:
                 # Not a /p/ or /reel/ link (e.g. a profile page) - nothing
                 # for us to fix, so leave it untouched.
-                return match.group(0), [], []
+                return match.group(0), [], [], ""
 
             shortcode = post_match.group(1)
             post = await self.instagram_client.get_post(shortcode)
@@ -130,24 +134,25 @@ class VxTCog(commands.Cog):
                     # The attached video already renders as its own native
                     # player; an embed on top could only show a static
                     # thumbnail, which would just duplicate it. Put the
-                    # caption/stats as plain text instead.
-                    text = self._format_caption_text(link, post, is_clipped=is_clipped)
-                    return text, files, []
+                    # caption/stats as plain text instead, appended after the
+                    # full message rather than inline with the link.
+                    text = self._format_caption_text(post, is_clipped=is_clipped)
+                    return link, files, [], text
 
                 # Show an embed card. If the first slide's video was too large
                 # to attach (files is None), we still build the card with its
                 # thumbnail so the post isn't left completely bare.
                 embed = self._build_embed(post)
-                return link, files or [], [embed]
+                return link, files or [], [embed], ""
 
             # Scraping failed - leave the original URL untouched so the message
             # is unchanged and Discord can attempt its own preview.
             logger.debug(
                 f"Instagram scrape failed for {match.group(0)!r}, leaving URL untouched"
             )
-            return match.group(0), [], []
+            return match.group(0), [], [], ""
 
-        return f"https://{DOMAIN_MAP[domain]}{rest}", [], []
+        return f"https://{DOMAIN_MAP[domain]}{rest}", [], [], ""
 
     async def _carousel_files(
         self,
@@ -291,13 +296,11 @@ class VxTCog(commands.Cog):
         return embed
 
     @staticmethod
-    def _format_caption_text(
-        link: str, post: InstagramPost, is_clipped: bool = False
-    ) -> str:
+    def _format_caption_text(post: InstagramPost, is_clipped: bool = False) -> str:
         """Format author/caption/stats as plain text, for posts whose video
         attachment already needs its own native player (no embed on top).
         """
-        lines = [link]
+        lines = []
 
         stats = []
         if post.username:
@@ -329,18 +332,28 @@ class VxTCog(commands.Cog):
         pieces = []
         extra_files = []
         embeds = []
+        trailing_texts = []
         last_end = 0
         for match in self.url_pattern.finditer(content):
             pieces.append(content[last_end : match.start()])
-            replacement, files, match_embeds = await self._replace_domain(
-                match, enabled_domains, filesize_limit
-            )
+            (
+                replacement,
+                files,
+                match_embeds,
+                trailing_text,
+            ) = await self._replace_domain(match, enabled_domains, filesize_limit)
             pieces.append(replacement)
             extra_files.extend(files)
             embeds.extend(match_embeds)
+            if trailing_text:
+                trailing_texts.append(trailing_text)
             last_end = match.end()
         pieces.append(content[last_end:])
-        return "".join(pieces), extra_files, embeds
+
+        new_content = "".join(pieces)
+        if trailing_texts:
+            new_content += "\n" + "\n\n".join(trailing_texts)
+        return new_content, extra_files, embeds
 
     async def _get_webhook(self, channel) -> discord.Webhook:
         """Get or create the VxT webhook for a channel, caching the result."""

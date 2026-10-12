@@ -144,6 +144,36 @@ async def test_single_video_post_skips_embed_and_uses_plain_caption_text():
 
 
 @pytest.mark.asyncio
+async def test_video_post_preserves_surrounding_message_text():
+    post = _make_post(
+        slides=[
+            MediaSlide(
+                url="https://cdn.example.com/vid.mp4",
+                thumbnail_url="https://cdn.example.com/thumb.jpg",
+                is_video=True,
+            )
+        ]
+    )
+    cog = _make_cog(post=post)
+    url = "https://instagram.com/reel/XYZ789/"
+    content = f"text before {url} text after"
+
+    new_content, files, embeds = await cog._process_content(
+        content,
+        enabled_domains={"instagram.com"},
+        filesize_limit=25 * 1024 * 1024,
+    )
+
+    assert new_content == (
+        f"text before <{url}> text after\n"
+        "**@a_guy_called_marc** · ❤️ 1,411 · 💬 137\n"
+        "When Indie Met the Dancefloor. 🪩"
+    )
+    assert len(files) == 1
+    assert embeds == []
+
+
+@pytest.mark.asyncio
 async def test_oversized_video_shows_embed_card_with_thumbnail():
     post = _make_post(
         slides=[

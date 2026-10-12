@@ -55,7 +55,8 @@ def get_candidate_encoders() -> list[EncoderConfig]:
     3. AMD / Intel Linux VA-API (/dev/dri/renderD128)
     4. AMD / Vulkan Video (h264_vulkan)
     5. Intel QuickSync Video (QSV)
-    6. Software fallback (libx264)
+    6. Apple VideoToolbox (macOS)
+    7. Software fallback (libx264)
     """
     return [
         # 1. NVIDIA NVENC (highest preference)
@@ -139,7 +140,20 @@ def get_candidate_encoders() -> list[EncoderConfig]:
             scale_filter_template="scale='min({width},iw)':-2",
             probe_args=["-c:v", "h264_qsv", "-preset", "veryfast", "-pix_fmt", "nv12"],
         ),
-        # 6. Universal software fallback
+        # 6. Apple VideoToolbox (macOS, Intel and Apple Silicon)
+        EncoderConfig(
+            name="apple_videotoolbox",
+            extra_input_args=[],
+            video_codec_args=[
+                "-c:v",
+                "h264_videotoolbox",
+                "-pix_fmt",
+                "nv12",
+            ],
+            scale_filter_template="scale='min({width},iw)':-2",
+            probe_args=["-c:v", "h264_videotoolbox", "-pix_fmt", "nv12"],
+        ),
+        # 7. Universal software fallback
         get_software_encoder(),
     ]
 
@@ -148,7 +162,7 @@ _DETECTED_ENCODER: EncoderConfig | None = None
 
 
 async def get_best_encoder(force_refresh: bool = False) -> EncoderConfig:
-    """Probe hardware encoders in priority order (NVIDIA -> AMD -> Intel -> Software) and cache the result."""
+    """Probe hardware encoders in priority order (NVIDIA -> AMD -> Intel -> Apple -> Software) and cache the result."""
     global _DETECTED_ENCODER
     if _DETECTED_ENCODER is not None and not force_refresh:
         return _DETECTED_ENCODER
