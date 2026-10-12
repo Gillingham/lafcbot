@@ -114,6 +114,12 @@ async def on_ready():
     except Exception as e:
         print(f"Failed to load dealsping cog: {e}")
 
+    try:
+        bot.load_extension("lafcbot.cogs.archive")
+        print("Loaded archive cog")
+    except Exception as e:
+        print(f"Failed to load archive cog: {e}")
+
     # Load config and start World Cup task if enabled
     wc_config = config.get("world_cup", {})
 
@@ -172,6 +178,10 @@ async def shutdown():
     dealsping_cog = bot.get_cog("DealsPingCog")
     if dealsping_cog and dealsping_cog.lahomewin_client:
         await dealsping_cog.lahomewin_client.close()
+
+    archive_cog = bot.get_cog("ArchiveCog")
+    if archive_cog and archive_cog.archive_client:
+        await archive_cog.archive_client.close()
 
 
 def main():
