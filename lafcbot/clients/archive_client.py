@@ -1,8 +1,10 @@
 """Client for archiving pages via archive.ph (archive.is/archive.today) and
-fetching their titles.
+fetching their metadata.
 """
 
 import logging
+from collections import OrderedDict
+from dataclasses import dataclass
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -14,9 +16,25 @@ BROWSER_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+# functools.lru_cache can't be used directly on an async method - it would
+# cache the coroutine object itself, and awaiting the same coroutine twice
+# raises. This bounded OrderedDict gives the same eviction behavior for the
+# resolved archive.ph URLs instead.
+ARCHIVE_URL_CACHE_SIZE = 256
+
+
+@dataclass
+class PageMetadata:
+    """Open Graph metadata scraped from a page, for building a rich embed."""
+
+    title: str | None
+    description: str | None
+    image_url: str | None
+    site_name: str | None
+
 
 class ArchiveClient:
-    """Async client for submitting pages to archive.ph and reading page titles."""
+    """Async client for submitting pages to archive.ph and reading page metadata."""
 
     BASE_URL = "https://archive.ph"
 
@@ -28,6 +46,7 @@ class ArchiveClient:
         """
         self._session = session
         self._owns_session = session is None
+        self._archive_url_cache: OrderedDict[str, str] = OrderedDict()
 
     async def __aenter__(self):
         if self._session is None:
@@ -49,7 +68,25 @@ class ArchiveClient:
         Falls back to the `/newest/` lookup link (which archive.ph resolves
         client-side) if submission fails for any reason, so this always
         returns a usable archive.ph link.
+
+        Results are cached per URL so repeated `!archive` calls on the same
+        link don't resubmit it to archive.ph.
         """
+        cached = self._archive_url_cache.get(url)
+        if cached is not None:
+            self._archive_url_cache.move_to_end(url)
+            return cached
+
+        result = await self._submit_for_archive_url(url)
+
+        self._archive_url_cache[url] = result
+        self._archive_url_cache.move_to_end(url)
+        if len(self._archive_url_cache) > ARCHIVE_URL_CACHE_SIZE:
+            self._archive_url_cache.popitem(last=False)
+
+        return result
+
+    async def _submit_for_archive_url(self, url: str) -> str:
         if not self._session:
             self._session = aiohttp.ClientSession()
 
@@ -99,8 +136,10 @@ class ArchiveClient:
             logger.warning(f"archive.ph submission failed for {url!r}: {e}")
             return fallback
 
-    async def get_page_title(self, url: str) -> str | None:
-        """Fetch a page and return its title, or None if it couldn't be determined."""
+    async def get_page_metadata(self, url: str) -> PageMetadata | None:
+        """Fetch a page and return its title/description/image/site name
+        (preferring Open Graph tags), or None if the page couldn't be fetched.
+        """
         if not self._session:
             self._session = aiohttp.ClientSession()
 
@@ -117,15 +156,40 @@ class ArchiveClient:
                 html = await response.text()
 
             soup = BeautifulSoup(html, "lxml")
-            if soup.title and soup.title.string:
-                return soup.title.string.strip()
 
+            title = None
             og_title = soup.find("meta", property="og:title")
             if og_title and og_title.get("content"):
-                return og_title["content"].strip()
+                title = og_title["content"].strip()
+            elif soup.title and soup.title.string:
+                title = soup.title.string.strip()
 
-            return None
+            description = None
+            og_description = soup.find("meta", property="og:description")
+            if og_description and og_description.get("content"):
+                description = og_description["content"].strip()
+            else:
+                meta_description = soup.find("meta", attrs={"name": "description"})
+                if meta_description and meta_description.get("content"):
+                    description = meta_description["content"].strip()
+
+            image_url = None
+            og_image = soup.find("meta", property="og:image")
+            if og_image and og_image.get("content"):
+                image_url = og_image["content"].strip()
+
+            site_name = None
+            og_site_name = soup.find("meta", property="og:site_name")
+            if og_site_name and og_site_name.get("content"):
+                site_name = og_site_name["content"].strip()
+
+            return PageMetadata(
+                title=title,
+                description=description,
+                image_url=image_url,
+                site_name=site_name,
+            )
 
         except (aiohttp.ClientError, TimeoutError) as e:
-            logger.warning(f"Failed to fetch title for {url!r}: {e}")
+            logger.warning(f"Failed to fetch metadata for {url!r}: {e}")
             return None

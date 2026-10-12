@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from lafcbot.clients.archive_client import PageMetadata
 from lafcbot.cogs.archive import ArchiveCog
 
 
@@ -72,7 +73,14 @@ async def test_archive_command_sends_embed_and_deletes_original():
     cog.archive_client.get_archive_url = AsyncMock(
         return_value="https://archive.ph/abc123"
     )
-    cog.archive_client.get_page_title = AsyncMock(return_value="Example Page Title")
+    cog.archive_client.get_page_metadata = AsyncMock(
+        return_value=PageMetadata(
+            title="Example Page Title",
+            description="A description blurb.",
+            image_url="https://example.com/image.jpg",
+            site_name="Example News",
+        )
+    )
 
     ctx = AsyncMock()
     ctx.channel = _FakeChannel([_FakeMessage("https://example.com/article")])
@@ -87,6 +95,9 @@ async def test_archive_command_sends_embed_and_deletes_original():
     assert isinstance(embed, discord.Embed)
     assert embed.title == "Example Page Title"
     assert embed.url == "https://archive.ph/abc123"
+    assert embed.description == "A description blurb."
+    assert embed.image.url == "https://example.com/image.jpg"
+    assert embed.author.name == "Example News"
 
 
 @pytest.mark.asyncio
@@ -95,7 +106,7 @@ async def test_archive_command_falls_back_to_url_when_title_missing():
     cog.archive_client.get_archive_url = AsyncMock(
         return_value="https://archive.ph/abc123"
     )
-    cog.archive_client.get_page_title = AsyncMock(return_value=None)
+    cog.archive_client.get_page_metadata = AsyncMock(return_value=None)
 
     ctx = AsyncMock()
     ctx.channel = _FakeChannel([_FakeMessage("https://example.com/article")])
@@ -128,7 +139,14 @@ async def test_archive_command_with_explicit_link_uses_that_link():
     cog.archive_client.get_archive_url = AsyncMock(
         return_value="https://archive.ph/explicit123"
     )
-    cog.archive_client.get_page_title = AsyncMock(return_value="Explicit Page Title")
+    cog.archive_client.get_page_metadata = AsyncMock(
+        return_value=PageMetadata(
+            title="Explicit Page Title",
+            description=None,
+            image_url=None,
+            site_name=None,
+        )
+    )
 
     ctx = AsyncMock()
     # Channel history has a different, older link - the explicit argument

@@ -54,9 +54,18 @@ class ArchiveCog(commands.Cog):
                 return
 
         archive_url = await self.archive_client.get_archive_url(url)
-        title = await self.archive_client.get_page_title(url) or url
+        metadata = await self.archive_client.get_page_metadata(url)
 
-        embed = discord.Embed(title=title, url=archive_url, color=ARCHIVE_COLOR)
+        embed = discord.Embed(
+            title=(metadata.title if metadata else None) or url,
+            url=archive_url,
+            description=metadata.description if metadata else None,
+            color=ARCHIVE_COLOR,
+        )
+        if metadata and metadata.site_name:
+            embed.set_author(name=metadata.site_name)
+        if metadata and metadata.image_url:
+            embed.set_image(url=metadata.image_url)
         embed.set_footer(text="archive.is")
 
         try:
