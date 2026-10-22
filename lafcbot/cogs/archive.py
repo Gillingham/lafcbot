@@ -16,6 +16,9 @@ URL_PATTERN = re.compile(r"https?://\S+")
 
 HISTORY_SEARCH_LIMIT = 50
 
+# Discord enforces a 256-character maximum on embed titles.
+EMBED_TITLE_MAX = 256
+
 
 class ArchiveCog(commands.Cog):
     """Cog for archiving the most recently linked page in a channel via archive.ph."""
@@ -31,6 +34,13 @@ class ArchiveCog(commands.Cog):
             if match:
                 return match.group(0)
         return None
+
+    @staticmethod
+    def _truncate_title(title: str) -> str:
+        """Truncate a string to Discord's embed title limit, adding an ellipsis if needed."""
+        if len(title) <= EMBED_TITLE_MAX:
+            return title
+        return title[: EMBED_TITLE_MAX - 1] + "…"
 
     @commands.command()
     async def archive(self, ctx: commands.Context, *, link: str | None = None):
@@ -56,8 +66,9 @@ class ArchiveCog(commands.Cog):
         archive_url = await self.archive_client.get_archive_url(url)
         metadata = await self.archive_client.get_page_metadata(url)
 
+        raw_title = (metadata.title if metadata else None) or url
         embed = discord.Embed(
-            title=(metadata.title if metadata else None) or url,
+            title=self._truncate_title(raw_title),
             url=archive_url,
             description=metadata.description if metadata else None,
             color=ARCHIVE_COLOR,

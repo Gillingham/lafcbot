@@ -180,3 +180,44 @@ async def test_archive_command_with_non_link_argument_sends_error():
     ctx.send.assert_awaited_once_with("That doesn't look like a link.")
     ctx.message.delete.assert_not_awaited()
     cog.archive_client.get_archive_url.assert_not_awaited()
+
+
+def test_truncate_title_leaves_short_titles_unchanged():
+    assert ArchiveCog._truncate_title("Short title") == "Short title"
+
+
+def test_truncate_title_leaves_exactly_256_chars_unchanged():
+    title = "x" * 256
+    assert ArchiveCog._truncate_title(title) == title
+
+
+def test_truncate_title_truncates_and_adds_ellipsis():
+    title = "x" * 300
+    result = ArchiveCog._truncate_title(title)
+    assert len(result) == 256
+    assert result.endswith("…")
+
+
+@pytest.mark.asyncio
+async def test_archive_command_truncates_long_title():
+    """A page title over 256 chars must be truncated before embedding."""
+    cog = _make_cog()
+    long_title = "A" * 300
+    cog.archive_client.get_archive_url = AsyncMock(return_value="https://archive.ph/xyz")
+    cog.archive_client.get_page_metadata = AsyncMock(
+        return_value=PageMetadata(
+            title=long_title,
+            description=None,
+            image_url=None,
+            site_name=None,
+        )
+    )
+    ctx = AsyncMock()
+    ctx.message = AsyncMock()
+    ctx.message.delete = AsyncMock()
+
+    await cog.archive.callback(cog, ctx, link="https://example.com/long")
+
+    sent_embed = ctx.send.call_args[1]["embed"]
+    assert len(sent_embed.title) == 256
+    assert sent_embed.title.endswith("…")
